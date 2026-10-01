@@ -42,7 +42,7 @@ export default function HomeScreen() {
 
   return (
     <Screen decor>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 8 }}>
           <Pressable accessibilityRole="button" accessibilityLabel="Open diary" onPress={() => router.push('/diary')} style={iconHit}>
             <CalendarIcon />
