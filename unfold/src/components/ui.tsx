@@ -90,7 +90,6 @@ export function Screen({
     <SafeAreaView style={styles.frame} edges={['top', 'bottom']} dataSet={{ unfoldFrame: 'true' }}>
       {decor ? <View pointerEvents="none" style={styles.waveTop} /> : null}
       {decor ? <View pointerEvents="none" style={styles.sun} /> : null}
-      {decor ? <View pointerEvents="none" style={styles.waveBottom} /> : null}
       {body}
       {footer ? <View style={styles.footer}>{footer}</View> : null}
     </SafeAreaView>
@@ -374,15 +373,6 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 32,
     backgroundColor: '#F8DCCF',
-  },
-  waveBottom: {
-    position: 'absolute',
-    bottom: -20,
-    left: -40,
-    right: -40,
-    height: 110,
-    borderRadius: 80,
-    backgroundColor: '#E7F4F0',
   },
   back: { alignSelf: 'flex-start', paddingVertical: 4, marginBottom: 8 },
   button: {
