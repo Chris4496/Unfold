@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "Unfold",
+    "slug": "unfold",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "unfold",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F7FBFA",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "hk.unfold.diary"
+    },
+    "android": {
+      "package": "hk.unfold.diary",
+      "adaptiveIcon": {
+        "backgroundColor": "#F7FBFA",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Unfold to record voice notes. Audio stays on your phone.",
+          "recordAudioAndroid": true
+        }
+      ],
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F7FBFA",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180
+        }
+      ]
+    ]
+  }
+}
