@@ -120,9 +120,9 @@ export function RecordButton({ recording, onPress }: { recording: boolean; onPre
       >
         <Animated.View
           style={{
-            width: 176,
-            height: 176,
-            borderRadius: 88,
+            width: 160,
+            height: 160,
+            borderRadius: 80,
             backgroundColor: 'rgba(27, 122, 104, 0.10)',
             alignItems: 'center',
             justifyContent: 'center',
@@ -131,9 +131,9 @@ export function RecordButton({ recording, onPress }: { recording: boolean; onPre
         >
           <View
             style={{
-              width: 124,
-              height: 124,
-              borderRadius: 62,
+              width: 116,
+              height: 116,
+              borderRadius: 58,
               backgroundColor: recording ? colors.tealDark : colors.teal,
               alignItems: 'center',
               justifyContent: 'center',

@@ -2,7 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 import { Back, Button, ButtonRow, Card, Screen, T } from '../../src/components/ui';
-import { dayKey, formatDay, formatTime, parseDayKey } from '../../src/lib/dates';
+import { dayKey, entryWhen, formatDay, formatTime, parseDayKey } from '../../src/lib/dates';
 import { dailySummary } from '../../src/lib/organise';
 import { useStore } from '../../src/store';
 import { colors } from '../../src/theme';
@@ -14,8 +14,8 @@ export default function DayScreen() {
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const key = typeof date === 'string' ? date : '';
   const entries = store.entries
-    .filter((entry) => dayKey(entry.createdAt) === key)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    .filter((entry) => dayKey(entryWhen(entry)) === key)
+    .sort((a, b) => entryWhen(a).localeCompare(entryWhen(b)));
   const heading = key ? formatDay(parseDayKey(key).toISOString()) : 'This day';
 
   return (

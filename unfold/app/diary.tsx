@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Back, Button, QuietButton, Screen, T } from '../src/components/ui';
-import { dayKey, formatMonth, monthGrid } from '../src/lib/dates';
+import { dayKey, entryWhen, formatMonth, monthGrid } from '../src/lib/dates';
 import { dailySummary } from '../src/lib/organise';
 import { useStore } from '../src/store';
 import { colors } from '../src/theme';
@@ -12,14 +12,14 @@ const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 export default function DiaryScreen() {
   const store = useStore();
   const router = useRouter();
-  const latest = [...store.entries].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).at(-1);
-  const initial = latest ? new Date(latest.createdAt) : new Date();
+  const latest = [...store.entries].sort((a, b) => entryWhen(a).localeCompare(entryWhen(b))).at(-1);
+  const initial = latest ? new Date(entryWhen(latest)) : new Date();
   const [cursor, setCursor] = useState({ year: initial.getFullYear(), month: initial.getMonth() });
 
-  const marked = useMemo(() => new Set(store.entries.map((entry) => dayKey(entry.createdAt))), [store.entries]);
+  const marked = useMemo(() => new Set(store.entries.map((entry) => dayKey(entryWhen(entry)))), [store.entries]);
   const cells = monthGrid(cursor.year, cursor.month);
   const monthEntries = store.entries.filter((entry) => {
-    const date = new Date(entry.createdAt);
+    const date = new Date(entryWhen(entry));
     return date.getFullYear() === cursor.year && date.getMonth() === cursor.month;
   });
 

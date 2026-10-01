@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { SummaryArt } from '../src/components/art';
-import { Button, ButtonRow, Card, Field, QuietButton, Screen, Stepper, T } from '../src/components/ui';
+import { Button, ButtonRow, Card, Field, QuietButton, Screen, Stepper, T, TokenRow } from '../src/components/ui';
 import { formatDay } from '../src/lib/dates';
 import { useStore } from '../src/store';
 import { colors } from '../src/theme';
@@ -27,8 +27,6 @@ export default function ReviewScreen() {
       </Screen>
     );
   }
-
-  const privacy = draft.tokens.length > 0 ? draft.tokens.map((token) => `[${token}]`).join(' ') : 'No names, schools or addresses were found.';
 
   function saveEdits() {
     store.updateDraft(mainConcerns, recentChange);
@@ -80,7 +78,7 @@ export default function ReviewScreen() {
         {editing ? <Field value={recentChange} onChangeText={setRecentChange} /> : <T size={15} color={colors.muted}>{draft.recentChange}</T>}
       </Card>
       <Card title="Privacy check">
-        <T size={15} color={colors.muted}>{privacy}</T>
+        <TokenRow tokens={draft.tokens} empty="No names, schools or addresses were found." />
       </Card>
       <Pressable accessibilityRole="button" onPress={() => setOpen((value) => !value)} style={{ marginBottom: 8 }}>
         <T size={14} weight="semibold" color={colors.teal}>

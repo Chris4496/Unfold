@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Back, Button, Card, Field, Screen, T } from '../../src/components/ui';
+import { Back, Button, Card, Field, Screen, T, TokenRow } from '../../src/components/ui';
 import { formatDay } from '../../src/lib/dates';
 import { useStore } from '../../src/store';
 import { colors } from '../../src/theme';
@@ -52,7 +52,7 @@ export default function WorkerCaseScreen() {
       </Card>
       {item.summary.tokens.length > 0 ? (
         <Card title="Removed before sharing">
-          <T size={15} color={colors.muted}>{item.summary.tokens.map((token) => `[${token}]`).join(' ')}</T>
+          <TokenRow tokens={item.summary.tokens} empty="No names, schools or addresses were found." />
         </Card>
       ) : null}
       {messages.map((message) => (

@@ -1,3 +1,7 @@
+export function entryWhen(entry: { createdAt: string; eventAt?: string }): string {
+  return entry.eventAt ?? entry.createdAt;
+}
+
 export function dayKey(iso: string): string {
   const d = new Date(iso);
   const y = d.getFullYear();
@@ -49,6 +53,9 @@ export function monthGrid(year: number, monthIndex: number): { iso: string; inMo
       inMonth: date.getMonth() === monthIndex,
       day: date.getDate(),
     });
+  }
+  while (cells.length > 7 && cells.slice(-7).every((cell) => !cell.inMonth)) {
+    cells.splice(cells.length - 7, 7);
   }
   return cells;
 }

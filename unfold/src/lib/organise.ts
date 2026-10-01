@@ -1,4 +1,4 @@
-import { dayKey, formatDay } from './dates';
+import { dayKey, entryWhen, formatDay } from './dates';
 import { deidentify } from './deidentify';
 import { capitalize, clip, joinAnd, sentences, uid } from './text';
 import type { AttributeId, Draft, Entry, TopicId, TokenKind } from '../types';
@@ -83,7 +83,7 @@ export function annotateEntry(transcript: string, createdAt: string, id = uid(),
 }
 
 function sorted(entries: Entry[]): Entry[] {
-  return [...entries].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return [...entries].sort((a, b) => entryWhen(a).localeCompare(entryWhen(b)));
 }
 
 function countTopic(entries: Entry[], topic: TopicId): number {
@@ -135,8 +135,8 @@ export function dailySummary(entries: Entry[]): string {
 export function periodLabel(entries: Entry[]): string {
   const list = sorted(entries);
   if (list.length === 0) return 'No notes yet';
-  const start = formatDay(list[0].createdAt);
-  const end = formatDay(list[list.length - 1].createdAt);
+  const start = formatDay(entryWhen(list[0]));
+  const end = formatDay(entryWhen(list[list.length - 1]));
   if (start === end) return `Notes from ${start}`;
   return `Notes from ${start} to ${end}`;
 }
@@ -144,7 +144,7 @@ export function periodLabel(entries: Entry[]): string {
 export function shouldOfferSupport(entries: Entry[]): boolean {
   // Prototype pattern check only. It is not a clinical threshold or a risk score.
   if (entries.length < 3) return false;
-  const days = new Set(entries.map((entry) => dayKey(entry.createdAt)));
+  const days = new Set(entries.map((entry) => dayKey(entryWhen(entry))));
   if (days.size < 2) return false;
   const hard = new Set<TopicId>();
   for (const entry of entries) {
@@ -174,9 +174,9 @@ export function buildDraft(entries: Entry[]): Draft {
     recentChange: recentChange(list),
     tokens: (['PERSON', 'SCHOOL', 'ADDRESS', 'PHONE', 'EMAIL'] as TokenKind[]).filter((token) => tokens.has(token)),
     period: periodLabel(list),
-    excerpts: list.slice(-4).map((entry) => ({
+    excerpts: list.slice(-6).map((entry) => ({
       id: entry.id,
-      createdAt: entry.createdAt,
+      createdAt: entryWhen(entry),
       text: clip(sentences(entry.deidentified)[0] ?? entry.deidentified),
     })),
   };

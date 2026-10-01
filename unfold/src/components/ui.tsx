@@ -272,6 +272,23 @@ export function Field({
   );
 }
 
+export function TokenRow({ tokens, empty }: { tokens: string[]; empty: string }) {
+  if (tokens.length === 0) {
+    return (
+      <T size={15} color={colors.muted}>
+        {empty}
+      </T>
+    );
+  }
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 12, rowGap: 4 }}>
+      {tokens.map((token) => (
+        <T key={token} size={15} color={colors.muted}>{`[${token}]`}</T>
+      ))}
+    </View>
+  );
+}
+
 export function QuietButton({ label, onPress }: { label: string; onPress: () => void }) {
   return (
     <Pressable accessibilityRole="button" onPress={onPress} hitSlop={8} style={{ paddingVertical: 6 }}>
@@ -296,6 +313,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.screen,
     position: 'relative',
     overflow: 'hidden',
+    minHeight: 0,
   },
   scroll: {
     paddingHorizontal: 24,
@@ -306,7 +324,7 @@ const styles = StyleSheet.create({
   footer: {
     paddingHorizontal: 24,
     paddingTop: 8,
-    paddingBottom: 12,
+    paddingBottom: 18,
     gap: 10,
   },
   blobMint: {
@@ -348,11 +366,11 @@ const styles = StyleSheet.create({
   },
   sun: {
     position: 'absolute',
-    top: 28,
-    right: 28,
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    top: 72,
+    right: 22,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#F8DCCF',
   },
   waveBottom: {

@@ -1,4 +1,4 @@
-import { formatDay } from './dates';
+import { entryWhen, formatDay } from './dates';
 import type { Entry } from '../types';
 
 const STOP = new Set([
@@ -55,8 +55,8 @@ export function askEntries(question: string, entries: Entry[]): AskAnswer {
 
   const hits = ranked.slice(0, 3).map(({ entry }) => ({
     entryId: entry.id,
-    createdAt: entry.createdAt,
-    dateLabel: formatDay(entry.createdAt),
+    createdAt: entryWhen(entry),
+    dateLabel: formatDay(entryWhen(entry)),
     quote: entry.transcript,
   }));
 
