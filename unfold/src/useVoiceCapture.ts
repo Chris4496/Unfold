@@ -5,6 +5,7 @@ import {
   useAudioRecorder,
 } from 'expo-audio';
 import { useEffect, useRef, useState } from 'react';
+import { retainRecording } from './transcribeAudio';
 import { startDictation, type Dictation } from './speech';
 
 export function useVoiceCapture() {
@@ -66,16 +67,18 @@ export function useVoiceCapture() {
     if (timerRef.current) clearInterval(timerRef.current);
     recordingRef.current = false;
     setRecording(false);
-    const spoken = dictationRef.current?.stop() ?? '';
+    const spokenPromise = dictationRef.current?.stop() ?? Promise.resolve('');
     dictationRef.current = null;
     try {
       await recorder.stop();
     } catch {
       /* keep the transcript even if the file is missing */
     }
+    const spoken = await spokenPromise;
     const transcript = (spoken || partialRef.current).trim();
+    const audioUri = await retainRecording(recorder.uri ?? undefined);
     remember('');
-    return { transcript, audioUri: recorder.uri ?? undefined };
+    return { transcript, audioUri };
   }
 
   return { recording, seconds, partial, start, stop };
