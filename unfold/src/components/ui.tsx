@@ -87,17 +87,16 @@ export function Screen({
   );
 
   const frame = (
-    <SafeAreaView style={styles.frame} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.frame} edges={['top', 'bottom']} dataSet={{ unfoldFrame: 'true' }}>
       {decor ? <View pointerEvents="none" style={styles.waveTop} /> : null}
       {decor ? <View pointerEvents="none" style={styles.sun} /> : null}
-      {decor ? <View pointerEvents="none" style={styles.waveBottom} /> : null}
       {body}
       {footer ? <View style={styles.footer}>{footer}</View> : null}
     </SafeAreaView>
   );
 
   return (
-    <View style={styles.canvas}>
+    <View style={styles.canvas} dataSet={{ unfoldScreen: 'true' }}>
       <View pointerEvents="none" style={styles.blobMint} />
       <View pointerEvents="none" style={styles.blobPeach} />
       <View pointerEvents="none" style={styles.blobDeep} />
@@ -302,18 +301,20 @@ export function QuietButton({ label, onPress }: { label: string; onPress: () => 
 const styles = StyleSheet.create({
   canvas: {
     flex: 1,
+    width: '100%',
+    height: '100%',
     backgroundColor: colors.canvas,
   },
-  fill: { flex: 1 },
+  fill: { flex: 1, minHeight: 0 },
   frame: {
     flex: 1,
     width: '100%',
     maxWidth: 440,
+    height: '100%',
     alignSelf: 'center',
     backgroundColor: colors.screen,
     position: 'relative',
     overflow: 'hidden',
-    minHeight: 0,
   },
   scroll: {
     paddingHorizontal: 24,
@@ -372,15 +373,6 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 32,
     backgroundColor: '#F8DCCF',
-  },
-  waveBottom: {
-    position: 'absolute',
-    bottom: -20,
-    left: -40,
-    right: -40,
-    height: 110,
-    borderRadius: 80,
-    backgroundColor: '#E7F4F0',
   },
   back: { alignSelf: 'flex-start', paddingVertical: 4, marginBottom: 8 },
   button: {
