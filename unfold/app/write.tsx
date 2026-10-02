@@ -16,8 +16,8 @@ function guidance(reason: string | undefined, recording: RecordingDraft | null, 
       ? 'The microphone is not available. Type it instead. It still stays on this phone.'
       : 'Type it here. It stays on this phone, just like a recording.';
   }
-  if (phase === 'preparing') return 'Preparing speech recognition on this phone. Your recording stays here.';
-  if (phase === 'transcribing') return 'Turning your recording into text. Cantonese and English both work. You can edit it before saving.';
+  if (phase === 'preparing') return 'Getting your recording ready to transcribe.';
+  if (phase === 'transcribing') return 'Turning your recording into text with ElevenLabs Scribe. Cantonese and English both work. You can edit it before saving.';
   if (phase === 'failed') return 'Write your note in the box. It stays on this phone.';
   return 'This text came from your recording. You can edit it. It stays on this phone.';
 }

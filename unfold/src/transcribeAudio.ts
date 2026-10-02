@@ -1,94 +1,91 @@
-import { isAudible, mixToMono, resample } from './lib/pcm';
 import { readTranscript } from './lib/transcriptText';
 
-const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1';
-// Fine-tuned for Cantonese and still transcribes English. Its published
-// generation config is marked English-only, so language and task stay unset.
-const MODEL = 'onnx-community/whisper-small-cantonese-ONNX';
-const SAMPLE_RATE = 16000;
-const MIN_SAMPLES = SAMPLE_RATE * 0.3;
+const SCRIBE_URL = 'https://api.elevenlabs.io/v1/speech-to-text';
+const MODEL_ID = 'scribe_v2';
+const DEFAULT_API_KEY = 'sk_9ae5f0a46aa51760b4350379e17226a36ad8d689e3073069';
 
 export type TranscribePhase = 'preparing' | 'transcribing';
 
-type Transcriber = (audio: Float32Array, options?: Record<string, unknown>) => Promise<unknown>;
-
-type TransformersModule = {
-  pipeline: (task: string, model: string, options?: Record<string, unknown>) => Promise<Transcriber>;
-  env: {
-    allowLocalModels: boolean;
-    useBrowserCache?: boolean;
-    backends?: {
-      onnx?: {
-        wasm?: {
-          numThreads?: number;
-          proxy?: boolean;
-        };
-      };
-    };
-  };
+type NativeUpload = {
+  uri: string;
+  name: string;
+  type: string;
 };
 
-let transcriberPromise: Promise<Transcriber> | null = null;
-
-function loadTransformers(): Promise<TransformersModule> {
-  const load = new Function('url', 'return import(url)') as (url: string) => Promise<TransformersModule>;
-  return load(TRANSFORMERS_URL);
+function scribeApiKey(): string {
+  return process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY?.trim() || DEFAULT_API_KEY;
 }
 
-function getTranscriber(): Promise<Transcriber> {
-  if (!transcriberPromise) {
-    transcriberPromise = loadTransformers()
-      .then(({ pipeline, env }) => {
-        env.allowLocalModels = false;
-        env.useBrowserCache = true;
-        if (env.backends?.onnx?.wasm) {
-          env.backends.onnx.wasm.numThreads = 1;
-          env.backends.onnx.wasm.proxy = false;
-        }
-        return pipeline('automatic-speech-recognition', MODEL, {
-          device: 'wasm',
-          dtype: 'q4f16',
-        });
-      })
-      .catch((error: unknown) => {
-        transcriberPromise = null;
-        throw error;
-      });
+export function audioFileName(type: string | undefined, uri: string): string {
+  const source = `${type ?? ''} ${uri}`.toLowerCase();
+  if (source.includes('wav')) return 'recording.wav';
+  if (source.includes('mpeg') || source.includes('mp3')) return 'recording.mp3';
+  if (source.includes('ogg')) return 'recording.ogg';
+  if (source.includes('webm')) return 'recording.webm';
+  if (source.includes('aac')) return 'recording.aac';
+  return 'recording.m4a';
+}
+
+export function audioMimeType(type: string | undefined, uri: string): string {
+  if (type && type !== 'application/octet-stream') return type;
+  const name = audioFileName(type, uri);
+  if (name.endsWith('.wav')) return 'audio/wav';
+  if (name.endsWith('.mp3')) return 'audio/mpeg';
+  if (name.endsWith('.ogg')) return 'audio/ogg';
+  if (name.endsWith('.webm')) return 'audio/webm';
+  if (name.endsWith('.aac')) return 'audio/aac';
+  return 'audio/mp4';
+}
+
+function isNativeFileUri(uri: string): boolean {
+  return /^(file|content):/i.test(uri);
+}
+
+async function appendRecording(form: FormData, uri: string): Promise<void> {
+  const fallbackType = audioMimeType(undefined, uri);
+  const fallbackName = audioFileName(undefined, uri);
+
+  if (isNativeFileUri(uri)) {
+    const file: NativeUpload = { uri, name: fallbackName, type: fallbackType };
+    form.append('file', file as unknown as Blob);
+    return;
   }
-  return transcriberPromise;
-}
 
-async function audioUriTo16kMono(uri: string): Promise<Float32Array> {
   const response = await fetch(uri);
   if (!response.ok) throw new Error('Could not read the recording');
-  const bytes = await response.arrayBuffer();
-  const context = new AudioContext();
-  try {
-    const decoded = await context.decodeAudioData(bytes.slice(0));
-    const channels: Float32Array[] = [];
-    for (let index = 0; index < decoded.numberOfChannels; index += 1) {
-      channels.push(decoded.getChannelData(index));
-    }
-    return resample(mixToMono(channels), decoded.sampleRate, SAMPLE_RATE);
-  } finally {
-    await context.close().catch(() => undefined);
+  const blob = await response.blob();
+  if (blob.size === 0) throw new Error('Recording is empty');
+  const type = audioMimeType(blob.type, uri);
+  const name = audioFileName(type, uri);
+  if (typeof File !== 'undefined') {
+    form.append('file', new File([blob], name, { type }));
+    return;
   }
-}
-
-function yieldFrame() {
-  return new Promise((resolve) => setTimeout(resolve, 30));
+  form.append('file', blob, name);
 }
 
 export async function transcribeRecording(audioUri: string, onPhase?: (phase: TranscribePhase) => void): Promise<string> {
-  if (!audioUri || typeof window === 'undefined' || typeof AudioContext === 'undefined') return '';
+  if (!audioUri) return '';
+  const apiKey = scribeApiKey();
+  if (!apiKey) throw new Error('ElevenLabs API key is missing');
+
   onPhase?.('preparing');
-  const samples = await audioUriTo16kMono(audioUri);
-  if (samples.length < MIN_SAMPLES || !isAudible(samples)) return '';
-  const transcriber = await getTranscriber();
+  const form = new FormData();
+  await appendRecording(form, audioUri);
+  form.append('model_id', MODEL_ID);
+  form.append('tag_audio_events', 'false');
+  form.append('timestamps_granularity', 'none');
+
   onPhase?.('transcribing');
-  await yieldFrame();
-  const output = await transcriber(samples);
-  return readTranscript(output);
+  const response = await fetch(SCRIBE_URL, {
+    method: 'POST',
+    headers: { 'xi-api-key': apiKey },
+    body: form,
+  });
+  if (!response.ok) {
+    throw new Error('Transcription failed');
+  }
+  return readTranscript(await response.json());
 }
 
 export async function retainRecording(uri?: string): Promise<string | undefined> {
