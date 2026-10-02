@@ -1,0 +1,39 @@
+diff --git a/node_modules/whisper.rn/cpp/jsi/RNWhisperJSI.cpp b/node_modules/whisper.rn/cpp/jsi/RNWhisperJSI.cpp
+index ac3403e..b34f291 100644
+--- a/node_modules/whisper.rn/cpp/jsi/RNWhisperJSI.cpp
++++ b/node_modules/whisper.rn/cpp/jsi/RNWhisperJSI.cpp
+@@ -883,6 +883,8 @@ TranscribeConfig createTranscribeConfig(
+     config.params.translate = getBoolProperty(runtime, options, "translate", false);
+     config.params.token_timestamps =
+         getBoolProperty(runtime, options, "tokenTimestamps", false);
++    config.params.no_timestamps =
++        getBoolProperty(runtime, options, "noTimestamps", false);
+     config.params.tdrz_enable = getBoolProperty(runtime, options, "tdrzEnable", false);
+     config.tdrzEnable = config.params.tdrz_enable;
+     config.params.max_len = getIntProperty(runtime, options, "maxLen", config.params.max_len);
+diff --git a/node_modules/whisper.rn/lib/typescript/NativeRNWhisper.d.ts b/node_modules/whisper.rn/lib/typescript/NativeRNWhisper.d.ts
+index 0d1a41b..571e177 100644
+--- a/node_modules/whisper.rn/lib/typescript/NativeRNWhisper.d.ts
++++ b/node_modules/whisper.rn/lib/typescript/NativeRNWhisper.d.ts
+@@ -14,6 +14,8 @@ export type TranscribeOptions = {
+     maxLen?: number;
+     /** Enable token-level timestamps */
+     tokenTimestamps?: boolean;
++    /** Decode without timestamp tokens (Default: false) */
++    noTimestamps?: boolean;
+     /** Enable tinydiarize (requires a tdrz model) */
+     tdrzEnable?: boolean;
+     /** Word timestamp probability threshold */
+diff --git a/node_modules/whisper.rn/src/NativeRNWhisper.ts b/node_modules/whisper.rn/src/NativeRNWhisper.ts
+index 61250ef..ba03a57 100644
+--- a/node_modules/whisper.rn/src/NativeRNWhisper.ts
++++ b/node_modules/whisper.rn/src/NativeRNWhisper.ts
+@@ -17,6 +17,8 @@ export type TranscribeOptions = {
+   maxLen?: number
+   /** Enable token-level timestamps */
+   tokenTimestamps?: boolean
++  /** Decode without timestamp tokens (Default: false) */
++  noTimestamps?: boolean
+   /** Enable tinydiarize (requires a tdrz model) */
+   tdrzEnable?: boolean
+   /** Word timestamp probability threshold */

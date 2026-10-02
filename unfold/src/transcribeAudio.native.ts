@@ -66,16 +66,21 @@ function getContext(onProgress: (fraction: number) => void): Promise<WhisperCont
   return contextPromise;
 }
 
-async function localAudioPath(uri: string): Promise<string> {
-  if (!uri.startsWith('content://')) return uri;
+async function decodeFile(uri: string) {
+  const { decodeAudioData } = await import('react-native-audio-api');
+  if (!uri.startsWith('content://')) return decodeAudioData(uri, SAMPLE_RATE);
+  // The decoder reads file paths only, so Android content URIs are copied first.
   const copy = new File(Paths.cache, `recording-${Date.now()}.m4a`);
   await new File(uri).copy(copy);
-  return copy.uri;
+  try {
+    return await decodeAudioData(copy.uri, SAMPLE_RATE);
+  } finally {
+    copy.delete();
+  }
 }
 
 async function recordingTo16kMono(uri: string): Promise<Float32Array> {
-  const { decodeAudioData } = await import('react-native-audio-api');
-  const decoded = await decodeAudioData(await localAudioPath(uri), SAMPLE_RATE);
+  const decoded = await decodeFile(uri);
   const channels: Float32Array[] = [];
   for (let index = 0; index < decoded.numberOfChannels; index += 1) {
     channels.push(decoded.getChannelData(index));
@@ -93,8 +98,9 @@ export async function transcribeRecording(
   if (samples.length < MIN_SAMPLES || !isAudible(samples)) return '';
   const context = await getContext((fraction) => onPhase?.('downloading', fraction));
   onPhase?.('transcribing');
-  // The fine-tune transcribes Cantonese and English correctly with auto-detect.
-  const { promise } = context.transcribeData(toPcm16(samples), { language: 'auto' });
+  // The fine-tune was trained without timestamp tokens. With them it drops most of the
+  // Cantonese clip and adds stray words to English, so they stay off.
+  const { promise } = context.transcribeData(toPcm16(samples), { language: 'auto', noTimestamps: true });
   const { result, isAborted } = await promise;
   if (isAborted) return '';
   return readTranscript(result);
