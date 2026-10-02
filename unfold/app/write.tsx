@@ -17,7 +17,7 @@ function guidance(reason: string | undefined, recording: RecordingDraft | null, 
       : 'Type it here. It stays on this phone, just like a recording.';
   }
   if (phase === 'preparing') return 'Preparing speech recognition on this phone. Your recording stays here.';
-  if (phase === 'transcribing') return 'Turning your recording into text. You can edit it before saving.';
+  if (phase === 'transcribing') return 'Turning your recording into text. Cantonese and English both work. You can edit it before saving.';
   if (phase === 'failed') return 'Write your note in the box. It stays on this phone.';
   return 'This text came from your recording. You can edit it. It stays on this phone.';
 }
@@ -25,7 +25,7 @@ function guidance(reason: string | undefined, recording: RecordingDraft | null, 
 export default function WriteScreen() {
   const { reason } = useLocalSearchParams<{ reason?: string }>();
   const [recording] = useState(() => currentRecording());
-  const [text, setText] = useState(recording?.transcript ?? '');
+  const [text, setText] = useState(recording?.audioUri ? '' : (recording?.transcript ?? ''));
   const [phase, setPhase] = useState<Phase>(recording?.audioUri ? 'preparing' : recording ? 'ready' : 'idle');
   const edited = useRef(false);
   const store = useStore();
@@ -41,9 +41,9 @@ export default function WriteScreen() {
     })
       .then((transcript) => {
         if (cancelled) return;
-        const incoming = transcript.trim();
+        const incoming = transcript.trim() || recording.transcript.trim();
         setText((current) => nextComposerText(current, incoming, edited.current));
-        if (edited.current || incoming || recording.transcript) setPhase('ready');
+        if (edited.current || incoming) setPhase('ready');
         else setPhase('failed');
       })
       .catch(() => {

@@ -37,7 +37,7 @@ export function startDictation(onText: (text: string) => void): Dictation | null
   const recognition = new Ctor();
   recognition.continuous = true;
   recognition.interimResults = true;
-  recognition.lang = 'en-HK';
+  recognition.lang = 'yue-Hant-HK';
 
   let finalText = '';
   let interimText = '';

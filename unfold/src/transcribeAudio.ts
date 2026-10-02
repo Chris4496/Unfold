@@ -2,7 +2,9 @@ import { isAudible, mixToMono, resample } from './lib/pcm';
 import { readTranscript } from './lib/transcriptText';
 
 const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1';
-const MODEL = 'onnx-community/whisper-tiny.en';
+// Fine-tuned for Cantonese and still transcribes English. Its published
+// generation config is marked English-only, so language and task stay unset.
+const MODEL = 'onnx-community/whisper-small-cantonese-ONNX';
 const SAMPLE_RATE = 16000;
 const MIN_SAMPLES = SAMPLE_RATE * 0.3;
 
@@ -45,7 +47,7 @@ function getTranscriber(): Promise<Transcriber> {
         }
         return pipeline('automatic-speech-recognition', MODEL, {
           device: 'wasm',
-          dtype: 'q8',
+          dtype: 'q4f16',
         });
       })
       .catch((error: unknown) => {
