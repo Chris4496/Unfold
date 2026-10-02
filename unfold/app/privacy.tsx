@@ -6,7 +6,7 @@ import { colors } from '../src/theme';
 const STEPS = [
   {
     title: 'On this phone',
-    body: 'Recordings and full transcripts stay here. You can delete a note from the diary.',
+    body: 'Recordings are sent to ElevenLabs only to be transcribed. Recordings and full transcripts are saved here. You can delete a note from the diary.',
   },
   {
     title: 'Prepared here, if you ask',
