@@ -1,11 +1,7 @@
-export function readableTranscript(text: string): string {
-  const clean = text.replace(/\s+/g, ' ').trim();
-  if (!/[0-9A-Za-z\u00C0-\u024F\u4E00-\u9FFF]/.test(clean)) return '';
-  return clean;
-}
-
 export function readTranscript(output: unknown): string {
-  return readableTranscript(collect(output));
+  const text = collect(output).replace(/\s+/g, ' ').trim();
+  if (!/[0-9A-Za-z\u00C0-\u024F\u4E00-\u9FFF]/.test(text)) return '';
+  return text;
 }
 
 export function nextComposerText(current: string, incoming: string, edited: boolean): string {
