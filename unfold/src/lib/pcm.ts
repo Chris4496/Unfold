@@ -31,6 +31,15 @@ export function resample(input: Float32Array, fromRate: number, toRate: number):
   return output;
 }
 
+export function toPcm16(samples: Float32Array): ArrayBuffer {
+  const output = new Int16Array(samples.length);
+  for (let index = 0; index < samples.length; index += 1) {
+    const value = Math.max(-1, Math.min(1, samples[index] ?? 0));
+    output[index] = Math.round(value * 32767);
+  }
+  return output.buffer;
+}
+
 export function isAudible(samples: Float32Array, threshold = 0.005): boolean {
   for (let index = 0; index < samples.length; index += 1) {
     if (Math.abs(samples[index]) >= threshold) return true;

@@ -8,7 +8,7 @@ const MODEL = 'onnx-community/whisper-small-cantonese-ONNX';
 const SAMPLE_RATE = 16000;
 const MIN_SAMPLES = SAMPLE_RATE * 0.3;
 
-export type TranscribePhase = 'preparing' | 'transcribing';
+export type TranscribePhase = 'preparing' | 'downloading' | 'transcribing';
 
 type Transcriber = (audio: Float32Array, options?: Record<string, unknown>) => Promise<unknown>;
 
@@ -79,8 +79,15 @@ function yieldFrame() {
   return new Promise((resolve) => setTimeout(resolve, 30));
 }
 
-export async function transcribeRecording(audioUri: string, onPhase?: (phase: TranscribePhase) => void): Promise<string> {
-  if (!audioUri || typeof window === 'undefined' || typeof AudioContext === 'undefined') return '';
+export function canTranscribe(): boolean {
+  return typeof window !== 'undefined' && typeof AudioContext !== 'undefined';
+}
+
+export async function transcribeRecording(
+  audioUri: string,
+  onPhase?: (phase: TranscribePhase, progress?: number) => void,
+): Promise<string> {
+  if (!audioUri || !canTranscribe()) return '';
   onPhase?.('preparing');
   const samples = await audioUriTo16kMono(audioUri);
   if (samples.length < MIN_SAMPLES || !isAudible(samples)) return '';

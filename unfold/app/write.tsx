@@ -6,18 +6,30 @@ import { nextComposerText } from '../src/lib/transcriptText';
 import { clearRecording, currentRecording, type RecordingDraft } from '../src/recordingDraft';
 import { useStore } from '../src/store';
 import { colors } from '../src/theme';
-import { transcribeRecording, type TranscribePhase } from '../src/transcribeAudio';
+import { canTranscribe, transcribeRecording, type TranscribePhase } from '../src/transcribeAudio';
 
 type Phase = 'idle' | TranscribePhase | 'ready' | 'failed';
 
-function guidance(reason: string | undefined, recording: RecordingDraft | null, phase: Phase): string {
+function guidance(
+  reason: string | undefined,
+  recording: RecordingDraft | null,
+  phase: Phase,
+  progress: number | undefined,
+): string {
   if (!recording) {
     return reason === 'mic'
       ? 'The microphone is not available. Type it instead. It still stays on this phone.'
       : 'Type it here. It stays on this phone, just like a recording.';
   }
   if (phase === 'preparing') return 'Preparing speech recognition on this phone. Your recording stays here.';
+  if (phase === 'downloading') {
+    const percent = progress === undefined ? '' : ` ${Math.round(progress * 100)}%`;
+    return `Downloading the speech model to this phone. This happens once.${percent} Your recording stays here.`;
+  }
   if (phase === 'transcribing') return 'Turning your recording into text. Cantonese and English both work. You can edit it before saving.';
+  if (phase === 'failed' && !canTranscribe()) {
+    return 'This version of the app cannot turn recordings into text. Expo Go cannot run the speech model, so use the Unfold app build. Write your note in the box for now.';
+  }
   if (phase === 'failed') return 'Write your note in the box. It stays on this phone.';
   return 'This text came from your recording. You can edit it. It stays on this phone.';
 }
@@ -27,17 +39,20 @@ export default function WriteScreen() {
   const [recording] = useState(() => currentRecording());
   const [text, setText] = useState(recording?.audioUri ? '' : (recording?.transcript ?? ''));
   const [phase, setPhase] = useState<Phase>(recording?.audioUri ? 'preparing' : recording ? 'ready' : 'idle');
+  const [progress, setProgress] = useState<number | undefined>();
   const edited = useRef(false);
   const store = useStore();
   const router = useRouter();
-  const waiting = phase === 'preparing' || phase === 'transcribing';
+  const waiting = phase === 'preparing' || phase === 'downloading' || phase === 'transcribing';
 
   useEffect(() => {
     const audioUri = recording?.audioUri;
     if (!audioUri) return;
     let cancelled = false;
-    transcribeRecording(audioUri, (next) => {
-      if (!cancelled) setPhase(next);
+    transcribeRecording(audioUri, (next, fraction) => {
+      if (cancelled) return;
+      setPhase(next);
+      setProgress(fraction);
     })
       .then((transcript) => {
         if (cancelled) return;
@@ -76,7 +91,7 @@ export default function WriteScreen() {
         What did you want to say?
       </T>
       <T size={16} color={colors.muted} style={{ marginTop: 8, marginBottom: 18 }}>
-        {guidance(typeof reason === 'string' ? reason : undefined, recording, phase)}
+        {guidance(typeof reason === 'string' ? reason : undefined, recording, phase, progress)}
       </T>
       <Card title="Your note">
         <Field

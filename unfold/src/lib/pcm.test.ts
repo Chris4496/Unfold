@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { isAudible, mixToMono, resample } from './pcm';
+import { isAudible, mixToMono, resample, toPcm16 } from './pcm';
 import { nextComposerText, readTranscript } from './transcriptText';
 
 test('mixes stereo into one channel', () => {
@@ -19,6 +19,18 @@ test('resamples a short signal to a lower rate', () => {
 test('silence is not treated as speech', () => {
   assert.equal(isAudible(new Float32Array(16000)), false);
   assert.equal(isAudible(new Float32Array([0, 0.2, 0])), true);
+});
+
+test('converts samples to 16-bit PCM for the phone speech model', () => {
+  const pcm = new Int16Array(toPcm16(new Float32Array([0, 1, -1, 2, 0.5])));
+  assert.deepEqual(Array.from(pcm), [0, 32767, -32767, 32767, 16384]);
+});
+
+test('drops non-speech tags from a speech model result', () => {
+  assert.equal(readTranscript({ result: '' }), '');
+  assert.equal(readTranscript(' _(Mandarin)      '), '');
+  assert.equal(readTranscript('[Music]'), '');
+  assert.equal(readTranscript('(笑聲) 我今日好攰'), '我今日好攰');
 });
 
 test('reads text from a speech model result', () => {

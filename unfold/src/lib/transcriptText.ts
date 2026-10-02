@@ -1,5 +1,9 @@
 export function readTranscript(output: unknown): string {
-  const text = collect(output).replace(/\s+/g, ' ').trim();
+  // Whisper labels non-speech as bracketed tags such as `(Mandarin)` or `[Music]`.
+  const text = collect(output)
+    .replace(/[[(（【][^\])）】]*[\])）】]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!/[0-9A-Za-z\u00C0-\u024F\u4E00-\u9FFF]/.test(text)) return '';
   return text;
 }

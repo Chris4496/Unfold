@@ -43,6 +43,14 @@
           "image": "./assets/splash-icon.png",
           "imageWidth": 180
         }
+      ],
+      [
+        "react-native-audio-api",
+        {
+          "iosBackgroundMode": false,
+          "androidPermissions": [],
+          "androidForegroundService": false
+        }
       ]
     ]
   }
