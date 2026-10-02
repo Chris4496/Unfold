@@ -35,6 +35,18 @@
           "recordAudioAndroid": true
         }
       ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Unfold to record voice notes. Audio stays on your phone.",
+          "speechRecognitionPermission": "Allow Unfold to turn voice notes into text on this phone. You can edit the text before saving.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.tts",
+            "com.google.android.as"
+          ]
+        }
+      ],
       "expo-font",
       [
         "expo-splash-screen",

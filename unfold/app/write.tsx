@@ -6,7 +6,8 @@ import { nextComposerText } from '../src/lib/transcriptText';
 import { clearRecording, currentRecording, type RecordingDraft } from '../src/recordingDraft';
 import { useStore } from '../src/store';
 import { colors } from '../src/theme';
-import { transcribeRecording, type TranscribePhase } from '../src/transcribeAudio';
+import { stopActiveDictation } from '../src/speech';
+import { canTranscribeFile, transcribeRecording, type TranscribePhase } from '../src/transcribeAudio';
 
 type Phase = 'idle' | TranscribePhase | 'ready' | 'failed';
 
@@ -22,11 +23,18 @@ function guidance(reason: string | undefined, recording: RecordingDraft | null, 
   return 'This text came from your recording. You can edit it. It stays on this phone.';
 }
 
+function openingPhase(recording: RecordingDraft | null): Phase {
+  if (!recording) return 'idle';
+  if (recording.transcript.trim()) return 'ready';
+  if (recording.audioUri && canTranscribeFile()) return 'preparing';
+  return 'failed';
+}
+
 export default function WriteScreen() {
   const { reason } = useLocalSearchParams<{ reason?: string }>();
   const [recording] = useState(() => currentRecording());
-  const [text, setText] = useState(recording?.audioUri ? '' : (recording?.transcript ?? ''));
-  const [phase, setPhase] = useState<Phase>(recording?.audioUri ? 'preparing' : recording ? 'ready' : 'idle');
+  const [text, setText] = useState(recording?.transcript ?? '');
+  const [phase, setPhase] = useState<Phase>(() => openingPhase(recording));
   const edited = useRef(false);
   const store = useStore();
   const router = useRouter();
@@ -34,24 +42,23 @@ export default function WriteScreen() {
 
   useEffect(() => {
     const audioUri = recording?.audioUri;
-    if (!audioUri) return;
+    if (!audioUri || recording.transcript.trim() || !canTranscribeFile()) return;
     let cancelled = false;
     transcribeRecording(audioUri, (next) => {
       if (!cancelled) setPhase(next);
     })
       .then((transcript) => {
         if (cancelled) return;
-        const incoming = transcript.trim() || recording.transcript.trim();
+        const incoming = transcript.trim();
         setText((current) => nextComposerText(current, incoming, edited.current));
-        if (edited.current || incoming) setPhase('ready');
-        else setPhase('failed');
+        setPhase(edited.current || incoming ? 'ready' : 'failed');
       })
       .catch(() => {
-        if (cancelled) return;
-        setPhase(recording.transcript ? 'ready' : 'failed');
+        if (!cancelled) setPhase('failed');
       });
     return () => {
       cancelled = true;
+      stopActiveDictation();
     };
   }, [recording]);
 
