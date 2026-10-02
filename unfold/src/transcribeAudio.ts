@@ -3,6 +3,7 @@ import { readTranscript } from './lib/transcriptText';
 
 const ENDPOINT = 'https://api.elevenlabs.io/v1/speech-to-text';
 const MODEL = 'scribe_v2';
+// Inlined into the client bundle, so it is extractable from any build. See the README before shipping.
 const API_KEY = process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY ?? '';
 
 export type TranscribePhase = 'preparing' | 'transcribing';
