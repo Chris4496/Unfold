@@ -244,15 +244,18 @@ export function Field({
   onChangeText,
   placeholder,
   multiline,
+  accessibilityLabel,
 }: {
   value: string;
   onChangeText: (value: string) => void;
   placeholder?: string;
   multiline?: boolean;
+  accessibilityLabel?: string;
 }) {
   const fonts = useContext(FontContext);
   return (
     <TextInput
+      accessibilityLabel={accessibilityLabel}
       value={value}
       onChangeText={onChangeText}
       placeholder={placeholder}

@@ -25,7 +25,7 @@ type SpeechWindow = Window & {
 };
 
 export type Dictation = {
-  stop: () => string;
+  stop: () => Promise<string>;
 };
 
 export function startDictation(onText: (text: string) => void): Dictation | null {
@@ -37,10 +37,13 @@ export function startDictation(onText: (text: string) => void): Dictation | null
   const recognition = new Ctor();
   recognition.continuous = true;
   recognition.interimResults = true;
-  recognition.lang = 'en-HK';
+  recognition.lang = 'yue-Hant-HK';
 
   let finalText = '';
+  let interimText = '';
   let stopped = false;
+
+  const spoken = () => `${finalText} ${interimText}`.trim();
 
   recognition.onresult = (event) => {
     let interim = '';
@@ -49,7 +52,8 @@ export function startDictation(onText: (text: string) => void): Dictation | null
       if (event.results[index].isFinal) finalText = `${finalText} ${piece}`.trim();
       else interim = `${interim} ${piece}`.trim();
     }
-    onText(`${finalText} ${interim}`.trim());
+    interimText = interim;
+    onText(spoken());
   };
 
   recognition.onerror = () => {
@@ -73,14 +77,22 @@ export function startDictation(onText: (text: string) => void): Dictation | null
   }
 
   return {
-    stop: () => {
-      stopped = true;
-      try {
-        recognition.stop();
-      } catch {
-        /* already stopped */
-      }
-      return finalText.trim();
-    },
+    stop: () =>
+      new Promise((resolve) => {
+        stopped = true;
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          resolve(spoken());
+        };
+        recognition.onend = () => finish();
+        try {
+          recognition.stop();
+        } catch {
+          finish();
+        }
+        setTimeout(finish, 400);
+      }),
   };
 }
