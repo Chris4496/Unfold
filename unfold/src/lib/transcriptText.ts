@@ -1,5 +1,11 @@
+import OpenCC from 'opencc-js/cn2t';
+
+// Scribe has no script option and often returns simplified characters. Hong Kong traditional
+// leaves English and text that is already traditional unchanged.
+const toTraditional = OpenCC.Converter({ from: 'cn', to: 'hk' });
+
 export function readTranscript(output: unknown): string {
-  const text = collect(output).replace(/\s+/g, ' ').trim();
+  const text = toTraditional(collect(output).replace(/\s+/g, ' ').trim());
   if (!/[0-9A-Za-z\u00C0-\u024F\u4E00-\u9FFF]/.test(text)) return '';
   return text;
 }

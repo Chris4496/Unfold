@@ -1,89 +1,47 @@
+import { File } from 'expo-file-system';
+import { Platform } from 'react-native';
 import { readTranscript } from './lib/transcriptText';
 
-const SCRIBE_URL = 'https://api.elevenlabs.io/v1/speech-to-text';
-const MODEL_ID = 'scribe_v2';
-const DEFAULT_API_KEY = 'sk_9ae5f0a46aa51760b4350379e17226a36ad8d689e3073069';
+const ENDPOINT = 'https://api.elevenlabs.io/v1/speech-to-text';
+const MODEL = 'scribe_v2';
+// Inlined into the client bundle, so it is extractable from any build. See the README before shipping.
+const API_KEY = process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY ?? '';
 
 export type TranscribePhase = 'preparing' | 'transcribing';
 
-type NativeUpload = {
-  uri: string;
-  name: string;
-  type: string;
-};
-
-function scribeApiKey(): string {
-  return process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY?.trim() || DEFAULT_API_KEY;
-}
-
-export function audioFileName(type: string | undefined, uri: string): string {
-  const source = `${type ?? ''} ${uri}`.toLowerCase();
-  if (source.includes('wav')) return 'recording.wav';
-  if (source.includes('mpeg') || source.includes('mp3')) return 'recording.mp3';
-  if (source.includes('ogg')) return 'recording.ogg';
-  if (source.includes('webm')) return 'recording.webm';
-  if (source.includes('aac')) return 'recording.aac';
-  return 'recording.m4a';
-}
-
-export function audioMimeType(type: string | undefined, uri: string): string {
-  if (type && type !== 'application/octet-stream') return type;
-  const name = audioFileName(type, uri);
-  if (name.endsWith('.wav')) return 'audio/wav';
-  if (name.endsWith('.mp3')) return 'audio/mpeg';
-  if (name.endsWith('.ogg')) return 'audio/ogg';
-  if (name.endsWith('.webm')) return 'audio/webm';
-  if (name.endsWith('.aac')) return 'audio/aac';
-  return 'audio/mp4';
-}
-
-function isNativeFileUri(uri: string): boolean {
-  return /^(file|content):/i.test(uri);
-}
-
-async function appendRecording(form: FormData, uri: string): Promise<void> {
-  const fallbackType = audioMimeType(undefined, uri);
-  const fallbackName = audioFileName(undefined, uri);
-
-  if (isNativeFileUri(uri)) {
-    const file: NativeUpload = { uri, name: fallbackName, type: fallbackType };
-    form.append('file', file as unknown as Blob);
+async function appendAudio(form: FormData, uri: string) {
+  if (Platform.OS === 'web') {
+    const response = await fetch(uri);
+    if (!response.ok) throw new Error('Could not read the recording');
+    const blob = await response.blob();
+    if (blob.size === 0) throw new Error('The recording is empty');
+    form.append('file', blob, blob.type.includes('webm') ? 'recording.webm' : 'recording.m4a');
     return;
   }
-
-  const response = await fetch(uri);
-  if (!response.ok) throw new Error('Could not read the recording');
-  const blob = await response.blob();
-  if (blob.size === 0) throw new Error('Recording is empty');
-  const type = audioMimeType(blob.type, uri);
-  const name = audioFileName(type, uri);
-  if (typeof File !== 'undefined') {
-    form.append('file', new File([blob], name, { type }));
-    return;
-  }
-  form.append('file', blob, name);
+  // Expo's fetch only accepts Blob or a file with bytes(). A { uri, name, type } part throws
+  // "Unsupported FormDataPart implementation".
+  const file = new File(uri);
+  if (!file.exists || file.size === 0) throw new Error('Could not read the recording');
+  form.append('file', file);
 }
 
 export async function transcribeRecording(audioUri: string, onPhase?: (phase: TranscribePhase) => void): Promise<string> {
   if (!audioUri) return '';
-  const apiKey = scribeApiKey();
-  if (!apiKey) throw new Error('ElevenLabs API key is missing');
-
+  if (!API_KEY) throw new Error('EXPO_PUBLIC_ELEVENLABS_API_KEY is not set');
   onPhase?.('preparing');
   const form = new FormData();
-  await appendRecording(form, audioUri);
-  form.append('model_id', MODEL_ID);
+  form.append('model_id', MODEL);
   form.append('tag_audio_events', 'false');
-  form.append('timestamps_granularity', 'none');
-
+  await appendAudio(form, audioUri);
   onPhase?.('transcribing');
-  const response = await fetch(SCRIBE_URL, {
+  const response = await fetch(ENDPOINT, {
     method: 'POST',
-    headers: { 'xi-api-key': apiKey },
+    headers: { 'xi-api-key': API_KEY },
     body: form,
   });
   if (!response.ok) {
-    throw new Error('Transcription failed');
+    const detail = await response.text().catch(() => '');
+    throw new Error(`Transcription failed (${response.status}): ${detail}`);
   }
   return readTranscript(await response.json());
 }

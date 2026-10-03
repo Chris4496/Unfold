@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { audioFileName, audioMimeType } from '../transcribeAudio';
 import { isAudible, mixToMono, resample } from './pcm';
 import { nextComposerText, readTranscript } from './transcriptText';
 
@@ -27,6 +26,8 @@ test('reads text from a speech model result', () => {
   assert.equal(readTranscript([{ text: 'hello' }, { text: 'there' }]), 'hello there');
   assert.equal(readTranscript({ text: '...' }), '');
   assert.equal(readTranscript({ text: '  我今日好攰，唔想做功課  ' }), '我今日好攰，唔想做功課');
+  assert.equal(readTranscript({ text: '我今天很累，不想做作业' }), '我今天很累，不想做作業');
+  assert.equal(readTranscript({ text: '里面' }), '裏面');
 });
 
 test('reads text from an ElevenLabs Scribe result', () => {
@@ -38,13 +39,6 @@ test('reads text from an ElevenLabs Scribe result', () => {
     }),
     '我今日好攰，唔想做功課',
   );
-});
-
-test('picks an audio filename and mime type for Scribe', () => {
-  assert.equal(audioFileName('audio/webm', 'blob:http://localhost/1'), 'recording.webm');
-  assert.equal(audioMimeType('audio/webm', 'blob:http://localhost/1'), 'audio/webm');
-  assert.equal(audioFileName(undefined, 'file:///data/recording.m4a'), 'recording.m4a');
-  assert.equal(audioMimeType(undefined, 'file:///data/recording.m4a'), 'audio/mp4');
 });
 
 test('keeps text the student already edited', () => {
