@@ -6,11 +6,15 @@ import {
 } from 'expo-audio';
 import { useEffect, useRef, useState } from 'react';
 import { retainRecording } from './transcribeAudio';
+import { startDictation, type Dictation } from './speech';
 
 export function useVoiceCapture() {
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  const [partial, setPartial] = useState('');
+  const partialRef = useRef('');
+  const dictationRef = useRef<Dictation | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingRef = useRef(false);
   const recorderRef = useRef(recorder);
@@ -19,11 +23,17 @@ export function useVoiceCapture() {
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+      dictationRef.current?.stop();
       if (recordingRef.current) {
         recorderRef.current.stop().catch(() => undefined);
       }
     };
   }, []);
+
+  function remember(text: string) {
+    partialRef.current = text;
+    setPartial(text);
+  }
 
   async function start(): Promise<boolean> {
     try {
@@ -38,6 +48,8 @@ export function useVoiceCapture() {
       });
       await recorder.prepareToRecordAsync();
       recorder.record();
+      remember('');
+      dictationRef.current = startDictation(remember);
       recordingRef.current = true;
       setRecording(true);
       setSeconds(0);
@@ -55,14 +67,19 @@ export function useVoiceCapture() {
     if (timerRef.current) clearInterval(timerRef.current);
     recordingRef.current = false;
     setRecording(false);
+    const spokenPromise = dictationRef.current?.stop() ?? Promise.resolve('');
+    dictationRef.current = null;
     try {
       await recorder.stop();
     } catch {
-      /* the file may be missing; the write screen falls back to typing */
+      /* keep the transcript even if the file is missing */
     }
+    const spoken = await spokenPromise;
+    const transcript = (spoken || partialRef.current).trim();
     const audioUri = await retainRecording(recorder.uri ?? undefined);
-    return { transcript: '', audioUri };
+    remember('');
+    return { transcript, audioUri };
   }
 
-  return { recording, seconds, start, stop };
+  return { recording, seconds, partial, start, stop };
 }

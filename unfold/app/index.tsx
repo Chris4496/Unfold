@@ -74,6 +74,13 @@ export default function HomeScreen() {
           <T size={16} color={colors.muted} center style={{ marginTop: 18 }}>
             {saving ? 'One moment' : capture.recording ? 'Tap to stop' : 'Tap to record'}
           </T>
+          {capture.recording && capture.partial ? (
+            <View style={{ marginTop: 18, backgroundColor: colors.white, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: colors.line }}>
+              <T size={14} color={colors.muted}>
+                {capture.partial}
+              </T>
+            </View>
+          ) : null}
           {!capture.recording && !saving ? (
             <View style={{ marginTop: 22, alignItems: 'center', gap: 8, width: '100%' }}>
               <LockPill onPress={() => router.push('/privacy')} />
