@@ -3,5 +3,5 @@
   "compilerOptions": {
     "strict": true
   },
-  "exclude": ["node_modules", "babel.config.js", "android", "ios", "src/lib/**/*.test.ts"]
+  "exclude": ["node_modules", "babel.config.js", "android", "ios", "src/lib/**/*.test.ts", "src/api.test.ts"]
 }

@@ -14,6 +14,10 @@ export type Entry = {
   topics: TopicId[];
   attributes: AttributeId[];
   audioUri?: string;
+  /** Set when the cloud organiser classified this entry (false = server fallback rules). */
+  genai?: boolean;
+  /** Server-reported classification uncertainty, when synced (shape owned by the server). */
+  uncertainty?: unknown;
 };
 
 export type Excerpt = {
@@ -30,7 +34,7 @@ export type Draft = {
   excerpts: Excerpt[];
 };
 
-export type CaseStatus = 'queued' | 'replied' | 'continued' | 'rematch' | 'withdrawn';
+export type CaseStatus = 'queued' | 'claimed' | 'replied' | 'continued' | 'rematch' | 'withdrawn';
 
 export type CaseItem = {
   id: string;
@@ -38,6 +42,12 @@ export type CaseItem = {
   status: CaseStatus;
   summary: Draft;
   seenReply: boolean;
+  /** True when the case lives on the server (cloud organisation on at submit time). */
+  remote?: boolean;
+  /** Server-side claim counter, refreshed from GET /api/cases/active. */
+  claimCount?: number;
+  /** Server read-time flag: queued/rematch longer than the unclaimed timeout. */
+  waitingNoWorker?: boolean;
 };
 
 export type Message = {
@@ -55,4 +65,12 @@ export type Persisted = {
   messages: Message[];
   snoozeUntilCount: number;
   draft: Draft | null;
+  /** Opaque device token from POST /api/devices/register (null until first cloud use). */
+  deviceToken: string | null;
+  /** Stable install identifier used for idempotent device registration. */
+  installId: string | null;
+  /** Independent cloud-organisation consent. Only deidentified text syncs when on. */
+  cloudOrg: boolean;
+  /** Kinds of the last few brief responses shown after saving (for /api/respond). */
+  recentResponseKinds: ('acknowledgement' | 'encouragement' | 'invite-elaboration')[];
 };

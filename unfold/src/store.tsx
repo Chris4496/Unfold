@@ -1,9 +1,23 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  caseTopics,
+  createCase,
+  detectCaseLanguage,
+  getActiveCase,
+  getCaseMessages,
+  postCaseMessage,
+  registerDevice,
+  setCloudConsent,
+  syncEntries,
+  toSyncPayload,
+  transitionCase,
+  type BriefResponseKind,
+} from './api';
 import { buildSampleEntries } from './lib/samples';
 import { annotateEntry, buildDraft, shouldOfferSupport } from './lib/organise';
 import { uid } from './lib/text';
-import type { CaseItem, Draft, Entry, Message, Persisted } from './types';
+import type { AttributeId, CaseItem, Draft, Entry, Message, Persisted, TopicId } from './types';
 
 const KEY = 'unfold.v1';
 
@@ -14,6 +28,10 @@ const EMPTY: Persisted = {
   messages: [],
   snoozeUntilCount: 0,
   draft: null,
+  deviceToken: null,
+  installId: null,
+  cloudOrg: false,
+  recentResponseKinds: [],
 };
 
 function keepAudio(uri?: string): string | undefined {
@@ -34,6 +52,12 @@ function sanitize(raw: unknown): Persisted {
     messages: Array.isArray(data.messages) ? data.messages : [],
     snoozeUntilCount: typeof data.snoozeUntilCount === 'number' ? data.snoozeUntilCount : 0,
     draft: data.draft ?? null,
+    deviceToken: typeof data.deviceToken === 'string' ? data.deviceToken : null,
+    installId: typeof data.installId === 'string' ? data.installId : null,
+    cloudOrg: Boolean(data.cloudOrg),
+    recentResponseKinds: Array.isArray(data.recentResponseKinds)
+      ? (data.recentResponseKinds.filter((kind) => typeof kind === 'string') as Persisted['recentResponseKinds'])
+      : [],
   };
 }
 
@@ -42,6 +66,10 @@ type Store = Persisted & {
   shouldPrompt: boolean;
   openCase: CaseItem | null;
   completeOnboarding: () => void;
+  /** Toggle the independent cloud-organisation consent. Resolves false if the server could not apply it. */
+  setCloudOrg: (next: boolean) => Promise<boolean>;
+  /** Record the kind of a brief response shown after saving (feeds /api/respond recentKinds). */
+  noteResponseKind: (kind: BriefResponseKind) => void;
   addEntry: (transcript: string, audioUri?: string) => Entry | null;
   setEventTime: (id: string, eventAt: string) => void;
   deleteEntry: (id: string) => void;
@@ -50,7 +78,10 @@ type Store = Persisted & {
   dismissPrompt: () => void;
   prepareDraft: () => Draft | null;
   updateDraft: (mainConcerns: string, recentChange: string) => void;
-  approveSharing: () => CaseItem | null;
+  /** Approve the reviewed draft. Submits to the server when cloud organisation is on. */
+  approveSharing: () => Promise<CaseItem | null>;
+  /** Pull the latest server status/messages for the open remote case. Silent no-op offline. */
+  refreshCaseFromServer: () => Promise<void>;
   withdrawCase: (id: string) => void;
   rematchCase: (id: string) => void;
   continueCase: (id: string) => void;
@@ -99,6 +130,57 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [data.cases],
   );
 
+  /**
+   * Lazily register this install with the server and return the device token.
+   * Returns null when the server is unreachable — callers then keep working
+   * fully on-device.
+   */
+  async function ensureDeviceToken(current: Persisted): Promise<string | null> {
+    if (current.deviceToken) return current.deviceToken;
+    try {
+      const installId = current.installId ?? `${uid()}${uid()}`;
+      const registration = await registerDevice(installId);
+      update((state) => ({
+        ...state,
+        installId,
+        deviceToken: registration.token,
+        cloudOrg: Boolean(registration.cloudOrg),
+      }));
+      return registration.token;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Fire-and-forget cloud sync for one entry. Sends deidentified text only
+   * (never the transcript) and merges the returned classification back into
+   * the local entry. Offline/failure silently keeps the local rules.
+   */
+  function syncEntryToCloud(entry: Entry) {
+    if (!data.cloudOrg || !data.deviceToken) return;
+    const token = data.deviceToken;
+    syncEntries(token, [toSyncPayload(entry)])
+      .then(({ results }) => {
+        const result = results.find((item) => item.clientId === entry.id);
+        if (!result) return;
+        update((current) => ({
+          ...current,
+          entries: current.entries.map((item) => {
+            if (item.id !== entry.id) return item;
+            return {
+              ...item,
+              topics: Array.isArray(result.topics) ? (result.topics as TopicId[]) : item.topics,
+              attributes: Array.isArray(result.attributes) ? (result.attributes as AttributeId[]) : item.attributes,
+              uncertainty: result.uncertainty ?? item.uncertainty,
+              genai: Boolean(result.genai),
+            };
+          }),
+        }));
+      })
+      .catch(() => undefined);
+  }
+
   const shouldPrompt =
     shouldOfferSupport(data.entries) && data.entries.length >= data.snoozeUntilCount && openCase == null;
 
@@ -109,11 +191,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       shouldPrompt,
       openCase,
       completeOnboarding: () => update((current) => ({ ...current, onboarded: true })),
+      setCloudOrg: async (next) => {
+        const token = await ensureDeviceToken(data);
+        if (!token) return false;
+        try {
+          const result = await setCloudConsent(token, next);
+          update((current) => ({ ...current, cloudOrg: Boolean(result.cloudOrg) }));
+          return Boolean(result.cloudOrg);
+        } catch {
+          return false;
+        }
+      },
+      noteResponseKind: (kind) =>
+        update((current) => ({
+          ...current,
+          recentResponseKinds: [...current.recentResponseKinds, kind].slice(-5),
+        })),
       addEntry: (transcript, audioUri) => {
         const trimmed = transcript.trim();
         if (!trimmed) return null;
         const entry = annotateEntry(trimmed, new Date().toISOString(), uid(), audioUri);
         update((current) => ({ ...current, entries: [...current.entries, entry] }));
+        syncEntryToCloud(entry);
         return entry;
       },
       setEventTime: (id, eventAt) =>
@@ -156,14 +255,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             },
           };
         }),
-      approveSharing: () => {
+      approveSharing: async () => {
         if (!data.draft) return null;
+        const draft = data.draft;
+        let id = uid();
+        let remote = false;
+        if (data.cloudOrg && data.deviceToken) {
+          try {
+            const created = await createCase(data.deviceToken, {
+              mainConcerns: draft.mainConcerns,
+              recentChange: draft.recentChange,
+              period: draft.period,
+              excerpts: draft.excerpts,
+              topics: caseTopics(data.entries),
+              language: detectCaseLanguage(data.entries),
+            });
+            id = created.id;
+            remote = true;
+          } catch {
+            // Server unreachable: keep a clearly-labelled local demo case.
+          }
+        }
         const item: CaseItem = {
-          id: uid(),
+          id,
           createdAt: new Date().toISOString(),
           status: 'queued',
-          summary: data.draft,
+          summary: draft,
           seenReply: true,
+          remote,
         };
         update((current) => ({
           ...current,
@@ -172,22 +291,80 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }));
         return item;
       },
-      withdrawCase: (id) =>
+      refreshCaseFromServer: async () => {
+        if (!data.cloudOrg || !data.deviceToken) return;
+        const target = openCase;
+        if (!target || !target.remote) return;
+        try {
+          const { case: active } = await getActiveCase(data.deviceToken);
+          if (!active || active.id !== target.id) return;
+          const { messages } = await getCaseMessages(data.deviceToken, active.id);
+          update((current) => ({
+            ...current,
+            messages: [
+              ...current.messages.filter((message) => message.caseId !== active.id),
+              ...messages.map((message) => ({
+                id: message.id,
+                caseId: active.id,
+                from: message.sender,
+                text: message.text,
+                createdAt: message.createdAt,
+              })),
+            ],
+            cases: current.cases.map((item) => {
+              if (item.id !== active.id) return item;
+              const newReply = active.status === 'replied' && item.status !== 'replied';
+              return {
+                ...item,
+                status: active.status,
+                claimCount: active.claimCount,
+                waitingNoWorker: active.waitingNoWorker,
+                seenReply: newReply ? false : item.seenReply,
+              };
+            }),
+          }));
+        } catch {
+          // Offline: keep the last known local state.
+        }
+      },
+      withdrawCase: (id) => {
+        const target = data.cases.find((item) => item.id === id);
+        if (target?.remote && data.deviceToken) {
+          void transitionCase(data.deviceToken, id, 'withdraw').catch(() => undefined);
+        }
         update((current) => ({
           ...current,
           snoozeUntilCount: current.entries.length + 2,
           cases: current.cases.map((item) => (item.id === id ? { ...item, status: 'withdrawn' } : item)),
-        })),
-      rematchCase: (id) =>
+        }));
+      },
+      rematchCase: (id) => {
+        const target = data.cases.find((item) => item.id === id);
+        if (target?.remote && data.deviceToken) {
+          void transitionCase(data.deviceToken, id, 'rematch').catch(() => undefined);
+        }
         update((current) => ({
           ...current,
-          cases: current.cases.map((item) => (item.id === id ? { ...item, status: 'rematch', seenReply: true } : item)),
-        })),
-      continueCase: (id) =>
+          cases: current.cases.map((item) =>
+            item.id === id
+              ? item.remote
+                ? // Server semantics: back to the queue with claim_count + 1.
+                  { ...item, status: 'queued', claimCount: (item.claimCount ?? 0) + 1, seenReply: true }
+                : { ...item, status: 'rematch', seenReply: true }
+              : item,
+          ),
+        }));
+      },
+      continueCase: (id) => {
+        const target = data.cases.find((item) => item.id === id);
+        if (target?.remote && data.deviceToken) {
+          void transitionCase(data.deviceToken, id, 'continue').catch(() => undefined);
+        }
         update((current) => ({
           ...current,
           cases: current.cases.map((item) => (item.id === id ? { ...item, status: 'continued', seenReply: true } : item)),
-        })),
+        }));
+      },
       markReplySeen: (id) =>
         update((current) => ({
           ...current,
@@ -196,6 +373,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       sendMessage: (caseId, from, text) => {
         const trimmed = text.trim();
         if (!trimmed) return;
+        const target = data.cases.find((item) => item.id === caseId);
+        if (from === 'student' && target?.remote && data.deviceToken) {
+          // Server is the source of truth; the next refresh reconciles.
+          void postCaseMessage(data.deviceToken, caseId, trimmed).catch(() => undefined);
+        }
         const message: Message = {
           id: uid(),
           caseId,

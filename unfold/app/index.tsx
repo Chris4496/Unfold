@@ -1,9 +1,11 @@
 import * as Haptics from 'expo-haptics';
 import { Redirect, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
+import { getAnalysis } from '../src/api';
 import { CalendarIcon, RecordButton, SearchIcon } from '../src/components/art';
 import { Button, ButtonRow, LockPill, Notice, QuietButton, Screen, T } from '../src/components/ui';
+import { shouldOfferSupport } from '../src/lib/organise';
 import { clearRecording, stageRecording } from '../src/recordingDraft';
 import { useStore } from '../src/store';
 import { colors } from '../src/theme';
@@ -20,6 +22,27 @@ export default function HomeScreen() {
   const capture = useVoiceCapture();
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const [cloudApproaching, setCloudApproaching] = useState<boolean | null>(null);
+
+  // When cloud organisation is on, the support prompt is driven by the
+  // server-side background analysis; any failure keeps the local rule.
+  useEffect(() => {
+    if (!store.cloudOrg || !store.deviceToken) {
+      setCloudApproaching(null);
+      return;
+    }
+    let active = true;
+    getAnalysis(store.deviceToken)
+      .then((result) => {
+        if (active) setCloudApproaching(result.updatedAt !== null ? result.approaching : null);
+      })
+      .catch(() => {
+        if (active) setCloudApproaching(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [store.cloudOrg, store.deviceToken, store.entries.length]);
 
   if (!store.ready) return <Screen><View /></Screen>;
   if (!store.onboarded) return <Redirect href="/onboarding" />;
@@ -51,6 +74,10 @@ export default function HomeScreen() {
   }
 
   const unseen = store.openCase && !store.openCase.seenReply && store.openCase.status === 'replied';
+  // Server analysis wins when available; otherwise the local pattern rule.
+  // Snooze and open-case guards always apply (mirrors store.shouldPrompt).
+  const approaching = store.cloudOrg && cloudApproaching !== null ? cloudApproaching : shouldOfferSupport(store.entries);
+  const prompt = approaching && store.entries.length >= store.snoozeUntilCount && store.openCase == null;
 
   return (
     <Screen decor>
@@ -97,7 +124,7 @@ export default function HomeScreen() {
                   <Button label="Read the reply" onPress={() => router.push({ pathname: '/case', params: { id: store.openCase!.id } })} />
                 </Notice>
               ) : null}
-              {!unseen && store.shouldPrompt ? (
+              {!unseen && prompt ? (
                 <Notice title="A few notes have continued" body="You can prepare a short summary, or keep this private.">
                   <ButtonRow>
                     <Button label="Not now" tone="secondary" onPress={store.dismissPrompt} />

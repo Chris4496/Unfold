@@ -111,7 +111,7 @@ export function Screen({
   );
 }
 
-export function Back({ label = 'Back', href }: { label?: string; href?: '/' | '/diary' | '/worker' | '/privacy' }) {
+export function Back({ label = 'Back', href }: { label?: string; href?: '/' | '/diary' | '/privacy' }) {
   const router = useRouter();
   return (
     <Pressable

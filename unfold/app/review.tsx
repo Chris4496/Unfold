@@ -15,6 +15,7 @@ export default function ReviewScreen() {
   const [mainConcerns, setMainConcerns] = useState(draft?.mainConcerns ?? '');
   const [recentChange, setRecentChange] = useState(draft?.recentChange ?? '');
   const [open, setOpen] = useState(false);
+  const [approving, setApproving] = useState(false);
 
   if (!draft) {
     return (
@@ -33,9 +34,15 @@ export default function ReviewScreen() {
     setEditing(false);
   }
 
-  function approve() {
-    const item = store.approveSharing();
-    if (item) router.replace('/shared');
+  async function approve() {
+    if (approving) return;
+    setApproving(true);
+    try {
+      const item = await store.approveSharing();
+      if (item) router.replace('/shared');
+    } finally {
+      setApproving(false);
+    }
   }
 
   return (
@@ -59,7 +66,7 @@ export default function ReviewScreen() {
                   setEditing(true);
                 }}
               />
-              <Button label="Approve sharing" onPress={approve} />
+              <Button label={approving ? 'Sharing…' : 'Approve sharing'} onPress={() => void approve()} disabled={approving} />
             </ButtonRow>
           )}
           {editing ? null : <QuietButton label="Not now" onPress={() => router.replace('/')} />}

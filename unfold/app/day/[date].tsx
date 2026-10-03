@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
+import { daySummaryWithFallback, type SummaryOutcome } from '../../src/api';
 import { Back, Button, ButtonRow, Card, Screen, T } from '../../src/components/ui';
 import { dayKey, entryWhen, formatDay, formatTime, parseDayKey } from '../../src/lib/dates';
 import { dailySummary } from '../../src/lib/organise';
@@ -18,15 +19,50 @@ export default function DayScreen() {
     .sort((a, b) => entryWhen(a).localeCompare(entryWhen(b)));
   const heading = key ? formatDay(parseDayKey(key).toISOString()) : 'This day';
 
+  const [summary, setSummary] = useState<SummaryOutcome>({
+    text: dailySummary(entries),
+    genai: false,
+    source: 'device',
+  });
+
+  // Server summary when cloud organisation is on; otherwise the local rule.
+  useEffect(() => {
+    if (!key || entries.length === 0) return;
+    let active = true;
+    daySummaryWithFallback(store.cloudOrg ? store.deviceToken : null, key, entries)
+      .then((outcome) => {
+        if (active) setSummary(outcome);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, store.cloudOrg, store.deviceToken, entries.length]);
+
+  const summaryLabel =
+    summary.source === 'cloud'
+      ? summary.genai
+        ? 'Cloud summary (AI)'
+        : 'Cloud summary (server rules — not AI)'
+      : 'On-device summary';
+
   return (
     <Screen scroll>
       <Back label="Diary" href="/diary" />
       <T weight="extrabold" size={30}>
         {heading}
       </T>
-      <T size={16} color={colors.muted} style={{ marginTop: 8, marginBottom: 16 }}>
-        {entries.length > 0 ? dailySummary(entries) : 'No notes on this day.'}
+      <T size={16} color={colors.muted} style={{ marginTop: 8 }}>
+        {entries.length > 0 ? summary.text : 'No notes on this day.'}
       </T>
+      {entries.length > 0 ? (
+        <T size={12} color={colors.faint} style={{ marginBottom: 16, marginTop: 4 }}>
+          {summaryLabel}
+        </T>
+      ) : (
+        <View style={{ marginBottom: 16 }} />
+      )}
       {entries.map((entry) => (
         <Card key={entry.id} title={formatTime(entry.createdAt)}>
           <T size={15}>{entry.transcript}</T>
