@@ -8,7 +8,7 @@ import { useStore } from '../src/store';
 import { colors } from '../src/theme';
 import { transcribeRecording, type TranscribePhase } from '../src/transcribeAudio';
 
-type Phase = 'idle' | TranscribePhase | 'ready' | 'failed';
+type Phase = 'idle' | TranscribePhase | 'ready' | 'unheard' | 'failed';
 
 function guidance(reason: string | undefined, recording: RecordingDraft | null, phase: Phase): string {
   if (!recording) {
@@ -18,7 +18,8 @@ function guidance(reason: string | undefined, recording: RecordingDraft | null, 
   }
   if (phase === 'preparing') return 'Sending your recording to ElevenLabs to turn it into text.';
   if (phase === 'transcribing') return 'Turning your recording into text. Cantonese and English both work. You can edit it before saving.';
-  if (phase === 'failed') return 'Write your note in the box. It stays on this phone.';
+  if (phase === 'unheard') return 'No words were heard in the recording. Check your microphone, or write your note in the box.';
+  if (phase === 'failed') return 'The recording could not be turned into text. Write your note in the box. It stays on this phone.';
   return 'This text came from your recording. You can edit it. Your saved note stays on this phone.';
 }
 
@@ -44,10 +45,11 @@ export default function WriteScreen() {
         const incoming = transcript.trim() || recording.transcript.trim();
         setText((current) => nextComposerText(current, incoming, edited.current));
         if (edited.current || incoming) setPhase('ready');
-        else setPhase('failed');
+        else setPhase('unheard');
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (cancelled) return;
+        console.warn('Transcription failed', error);
         setPhase(recording.transcript ? 'ready' : 'failed');
       });
     return () => {
