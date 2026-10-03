@@ -26,6 +26,8 @@ test('reads text from a speech model result', () => {
   assert.equal(readTranscript([{ text: 'hello' }, { text: 'there' }]), 'hello there');
   assert.equal(readTranscript({ text: '...' }), '');
   assert.equal(readTranscript({ text: '  我今日好攰，唔想做功課  ' }), '我今日好攰，唔想做功課');
+  assert.equal(readTranscript({ text: '我今天很累，不想做作业' }), '我今天很累，不想做作業');
+  assert.equal(readTranscript({ text: '里面' }), '裏面');
 });
 
 test('keeps text the student already edited', () => {

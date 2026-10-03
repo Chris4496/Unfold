@@ -1,3 +1,4 @@
+import { File } from 'expo-file-system';
 import { Platform } from 'react-native';
 import { readTranscript } from './lib/transcriptText';
 
@@ -17,8 +18,11 @@ async function appendAudio(form: FormData, uri: string) {
     form.append('file', blob, blob.type.includes('webm') ? 'recording.webm' : 'recording.m4a');
     return;
   }
-  // React Native's FormData streams the file from disk when given a { uri, name, type } part.
-  form.append('file', { uri, name: 'recording.m4a', type: 'audio/m4a' } as unknown as Blob);
+  // Expo's fetch only accepts Blob or a file with bytes(). A { uri, name, type } part throws
+  // "Unsupported FormDataPart implementation".
+  const file = new File(uri);
+  if (!file.exists || file.size === 0) throw new Error('Could not read the recording');
+  form.append('file', file);
 }
 
 export async function transcribeRecording(audioUri: string, onPhase?: (phase: TranscribePhase) => void): Promise<string> {
