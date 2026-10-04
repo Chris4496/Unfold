@@ -77,7 +77,9 @@ export default function CaseScreen() {
       ? 'You asked for a different social worker. The summary is back in the queue.'
       : item.status === 'claimed'
         ? 'You will see the reply here. You can still withdraw at any time.'
-        : 'Only the summary you approved is visible. You can withdraw sharing at any time.';
+        : item.status === 'continued'
+          ? 'Only the summary you approved is visible.'
+          : 'Only the summary you approved is visible. You can withdraw sharing at any time.';
 
   return (
     <Screen
@@ -90,7 +92,6 @@ export default function CaseScreen() {
       }
     >
       <Back label="Home" href="/" />
-      <T size={14} weight="semibold" color={colors.teal}>Your choice</T>
       <T weight="extrabold" size={30} style={{ marginTop: 8 }}>
         {heading}
       </T>
@@ -129,7 +130,6 @@ export default function CaseScreen() {
             <Field value={text} onChangeText={setText} placeholder="Your reply" multiline />
           </Card>
           <Button label="Ask for someone else" tone="secondary" onPress={() => store.rematchCase(item.id)} />
-          <WithdrawButton onWithdraw={() => store.withdrawCase(item.id)} />
         </View>
       ) : null}
     </Screen>

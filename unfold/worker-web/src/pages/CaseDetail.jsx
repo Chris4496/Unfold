@@ -58,7 +58,7 @@ function senderLabel(message, me) {
   return 'You';
 }
 
-/** Professional case view: summary, deidentified excerpts, respond + thread. */
+/** Professional case view: summary, deidentified excerpts, and one message thread. */
 export default function CaseDetail() {
   const { id } = useParams();
   const { worker } = useAuth();
@@ -219,35 +219,7 @@ export default function CaseDetail() {
         )}
       </section>
 
-      <section className="card">
-        <h2>Respond to the student</h2>
-        {!canRespond && (
-          <p className="muted small">
-            You can send a message while the case is awaiting your response
-            (status: {caseData.status}).
-          </p>
-        )}
-        {sendError && <div className="alert alert-error">{sendError}</div>}
-        <form onSubmit={send}>
-          <textarea
-            className="respond-box"
-            rows={5}
-            placeholder="Write a brief, supportive response…"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            disabled={!canRespond || sending}
-          />
-          <button
-            className="btn btn-primary"
-            type="submit"
-            disabled={!canRespond || sending || !text.trim()}
-          >
-            {sending ? 'Sending…' : 'Send'}
-          </button>
-        </form>
-      </section>
-
-      <section className="card">
+      <section className="card conversation">
         <h2>Messages</h2>
         {messages.length === 0 ? (
           <p className="muted">No messages yet. Your first response will appear here.</p>
@@ -263,6 +235,30 @@ export default function CaseDetail() {
             ))}
           </ul>
         )}
+        <form className="composer" onSubmit={send}>
+          {!canRespond && (
+            <p className="muted small">
+              You can send a message while the case is awaiting your response
+              (status: {caseData.status}).
+            </p>
+          )}
+          {sendError && <div className="alert alert-error">{sendError}</div>}
+          <textarea
+            className="respond-box"
+            rows={4}
+            placeholder="Write a brief, supportive response…"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            disabled={!canRespond || sending}
+          />
+          <button
+            className="btn btn-primary"
+            type="submit"
+            disabled={!canRespond || sending || !text.trim()}
+          >
+            {sending ? 'Sending…' : 'Send'}
+          </button>
+        </form>
       </section>
     </div>
   );
