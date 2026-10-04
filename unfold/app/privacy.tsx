@@ -9,8 +9,12 @@ const STEPS = [
     body: 'Recordings are sent to ElevenLabs only to be transcribed. Recordings and full transcripts are saved here. You can delete a note from the diary.',
   },
   {
-    title: 'Prepared here, if you ask',
-    body: 'Names, schools, addresses, phone numbers and email addresses are replaced on this phone before a summary is shown.',
+    title: 'De-identified here, before anything leaves',
+    body: 'Names, schools, addresses, phone numbers and email addresses — in English and common Chinese forms — are replaced on this phone with markers like [PERSON] or [ADDRESS] before a summary is shown or sent. This filter is best-effort: uncommon names or unusual spellings can be missed, and ordinary words that look like names are deliberately left alone. Read a summary before approving it.',
+  },
+  {
+    title: 'Optional cloud organisation',
+    body: 'If you turn on cloud organisation in Settings, only the de-identified text of your notes goes to the Unfold server for themes, daily summaries and Ask your diary — never transcripts or audio. Turning it off deletes every cloud copy from the server; deleting a note or everything on this phone deletes the matching cloud copies too.',
   },
   {
     title: 'Shared only if you approve',

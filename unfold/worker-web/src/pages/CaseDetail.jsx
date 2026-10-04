@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api.js';
+import { useAuth } from '../auth.jsx';
 import VerificationPending from './VerificationPending.jsx';
 import {
+  EmptyState,
   LanguageChip,
   StatusChip,
   TopicChips,
@@ -40,13 +42,33 @@ function Excerpt({ excerpt, index }) {
   );
 }
 
+/**
+ * Sender label for a thread bubble. Worker messages carry `worker_name`
+ * (server contract); "You" is only shown when that name matches the
+ * logged-in worker — messages from other workers (e.g. the previous worker
+ * on a rematched case) are shown under their own name. Servers predating
+ * the contract omit `worker_name`; those threads only ever contain the
+ * claiming worker's own messages, so the "You" fallback stays correct.
+ */
+function senderLabel(message, me) {
+  if (message.sender !== 'worker') return 'Student';
+  if (message.worker_name) {
+    return me && message.worker_name === me.name ? 'You' : message.worker_name;
+  }
+  return 'You';
+}
+
 /** Professional case view: summary, deidentified excerpts, respond + thread. */
 export default function CaseDetail() {
   const { id } = useParams();
+  const { worker } = useAuth();
   const [caseData, setCaseData] = useState(null);
   const [messages, setMessages] = useState(null);
   const [error, setError] = useState(null);
   const [notVerified, setNotVerified] = useState(false);
+  // Student withdrew the case: per contract the API answers 404
+  // case_not_found, and the detail page must not render any case content.
+  const [withdrawn, setWithdrawn] = useState(false);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState(null);
@@ -64,7 +86,9 @@ export default function CaseDetail() {
       if (err.code === 'not_verified') setNotVerified(true);
       else if (err.code === 'not_your_case')
         setError('This case is not assigned to you. Claim it from the queue first.');
-      else if (err.code === 'case_not_found') setError('Case not found.');
+      // Withdrawn cases are indistinguishable from never-shared ones by
+      // design (404 case_not_found): show the same no-longer-shared notice.
+      else if (err.code === 'case_not_found') setWithdrawn(true);
       else setError('Could not load the case. Is the server running?');
     }
   }, [id]);
@@ -84,12 +108,21 @@ export default function CaseDetail() {
         body: { text: text.trim() },
       });
       setCaseData(d.case);
-      setMessages((prev) => [...(prev || []), d.message]);
+      // The respond response may not echo worker_name yet; stamp our own
+      // name so the bubble labels as "You" under the new sender rules.
+      const sent =
+        d.message && d.message.sender === 'worker' && !d.message.worker_name && worker
+          ? { ...d.message, worker_name: worker.name }
+          : d.message;
+      setMessages((prev) => [...(prev || []), sent]);
       setText('');
     } catch (err) {
       if (err.code === 'invalid_status') {
         setSendError('This case is not waiting for your response right now.');
         load();
+      } else if (err.code === 'case_not_found') {
+        // Withdrawn between loading the thread and pressing Send.
+        setWithdrawn(true);
       } else {
         setSendError('Could not send the message. Please try again.');
       }
@@ -99,6 +132,22 @@ export default function CaseDetail() {
   }
 
   if (notVerified) return <VerificationPending />;
+  // Withdrawn (404 case_not_found) or — on pre-contract servers that still
+  // return 200 — status 'withdrawn': render only the notice, never the
+  // summary, excerpts, thread, or reply box.
+  if (withdrawn || (caseData && caseData.status === 'withdrawn')) {
+    return (
+      <div className="page">
+        <EmptyState title="This summary is no longer shared.">
+          The student has withdrawn this case, so its excerpts and messages
+          are no longer available.
+        </EmptyState>
+        <Link className="btn btn-ghost" to="/cases">
+          Back to my cases
+        </Link>
+      </div>
+    );
+  }
   if (error) {
     return (
       <div className="page">
@@ -207,8 +256,7 @@ export default function CaseDetail() {
             {messages.map((m) => (
               <li key={m.id} className={`bubble bubble-${m.sender}`}>
                 <div className="bubble-meta">
-                  {m.sender === 'worker' ? 'You' : 'Student'} ·{' '}
-                  {formatDateTime(m.created_at)}
+                  {senderLabel(m, worker)} · {formatDateTime(m.created_at)}
                 </div>
                 <div className="bubble-text">{m.text}</div>
               </li>

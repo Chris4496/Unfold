@@ -3,6 +3,8 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import {
   caseTopics,
   createCase,
+  deleteCloudEntries,
+  deleteCloudEntry,
   detectCaseLanguage,
   getActiveCase,
   getCaseMessages,
@@ -13,6 +15,7 @@ import {
   toSyncPayload,
   transitionCase,
   type BriefResponseKind,
+  type SyncResult,
 } from './api';
 import { buildSampleEntries } from './lib/samples';
 import { annotateEntry, buildDraft, shouldOfferSupport } from './lib/organise';
@@ -153,6 +156,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }
 
   /**
+   * Merge server classification results back into local entries and mark them
+   * as synced (the flag scopes later per-entry cloud deletes).
+   */
+  function mergeSyncResults(results: SyncResult[]) {
+    update((current) => ({
+      ...current,
+      entries: current.entries.map((item) => {
+        const result = results.find((entry) => entry.clientId === item.id);
+        if (!result) return item;
+        return {
+          ...item,
+          topics: Array.isArray(result.topics) ? (result.topics as TopicId[]) : item.topics,
+          attributes: Array.isArray(result.attributes) ? (result.attributes as AttributeId[]) : item.attributes,
+          uncertainty: result.uncertainty ?? item.uncertainty,
+          genai: Boolean(result.genai),
+          synced: true,
+        };
+      }),
+    }));
+  }
+
+  /**
    * Fire-and-forget cloud sync for one entry. Sends deidentified text only
    * (never the transcript) and merges the returned classification back into
    * the local entry. Offline/failure silently keeps the local rules.
@@ -161,24 +186,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!data.cloudOrg || !data.deviceToken) return;
     const token = data.deviceToken;
     syncEntries(token, [toSyncPayload(entry)])
-      .then(({ results }) => {
-        const result = results.find((item) => item.clientId === entry.id);
-        if (!result) return;
-        update((current) => ({
-          ...current,
-          entries: current.entries.map((item) => {
-            if (item.id !== entry.id) return item;
-            return {
-              ...item,
-              topics: Array.isArray(result.topics) ? (result.topics as TopicId[]) : item.topics,
-              attributes: Array.isArray(result.attributes) ? (result.attributes as AttributeId[]) : item.attributes,
-              uncertainty: result.uncertainty ?? item.uncertainty,
-              genai: Boolean(result.genai),
-            };
-          }),
-        }));
-      })
+      .then(({ results }) => mergeSyncResults(results))
       .catch(() => undefined);
+  }
+
+  /**
+   * Backfill: when cloud organisation is switched on, push the deidentified
+   * text of every existing local note (batched to the server's 200-per-call
+   * limit). Failures degrade silently to the on-device rules and are logged.
+   */
+  function backfillCloud(entries: Entry[], token: string) {
+    const batches: Entry[][] = [];
+    for (let index = 0; index < entries.length; index += 200) {
+      batches.push(entries.slice(index, index + 200));
+    }
+    void (async () => {
+      for (const batch of batches) {
+        try {
+          const { results } = await syncEntries(token, batch.map(toSyncPayload));
+          mergeSyncResults(results);
+        } catch (error) {
+          console.warn('[unfold] cloud backfill failed for a batch of', batch.length, 'entries', error);
+        }
+      }
+    })();
   }
 
   const shouldPrompt =
@@ -195,8 +226,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const token = await ensureDeviceToken(data);
         if (!token) return false;
         try {
-          const result = await setCloudConsent(token, next);
+          // Turning the consent off also asks the server to purge every cloud
+          // copy of this device's entries (contract: purgeCloud only with off).
+          const result = await setCloudConsent(token, next, next ? undefined : { purgeCloud: true });
           update((current) => ({ ...current, cloudOrg: Boolean(result.cloudOrg) }));
+          // Turning it on backfills existing local notes (deidentified text only).
+          if (result.cloudOrg && data.entries.length > 0) backfillCloud(data.entries, token);
           return Boolean(result.cloudOrg);
         } catch {
           return false;
@@ -215,13 +250,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         syncEntryToCloud(entry);
         return entry;
       },
-      setEventTime: (id, eventAt) =>
+      setEventTime: (id, eventAt) => {
         update((current) => ({
           ...current,
           entries: current.entries.map((entry) => (entry.id === id ? { ...entry, eventAt } : entry)),
-        })),
-      deleteEntry: (id) =>
-        update((current) => ({ ...current, entries: current.entries.filter((entry) => entry.id !== id) })),
+        }));
+        // The server accepts eventAt updates: re-sync this note when cloud is on.
+        const entry = data.entries.find((item) => item.id === id);
+        if (entry) syncEntryToCloud({ ...entry, eventAt });
+      },
+      deleteEntry: (id) => {
+        const target = data.entries.find((entry) => entry.id === id);
+        // Propagate the delete to the cloud copy, but only for entries known
+        // to have synced. Failure is logged and never blocks the local delete.
+        if (target?.synced && data.cloudOrg && data.deviceToken) {
+          void deleteCloudEntry(data.deviceToken, id).catch((error) =>
+            console.warn('[unfold] cloud delete failed for entry', id, error),
+          );
+        }
+        update((current) => ({ ...current, entries: current.entries.filter((entry) => entry.id !== id) }));
+      },
       loadSamples: () => {
         const samples = buildSampleEntries();
         update((current) => ({
@@ -230,7 +278,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           snoozeUntilCount: 0,
         }));
       },
-      clearAll: () => commit({ ...EMPTY, onboarded: true }),
+      clearAll: () => {
+        // "Delete everything" also deletes every cloud copy of this device's
+        // entries. Failure is logged and never blocks the local wipe.
+        if (data.cloudOrg && data.deviceToken) {
+          void deleteCloudEntries(data.deviceToken).catch((error) =>
+            console.warn('[unfold] cloud delete-all failed', error),
+          );
+        }
+        commit({ ...EMPTY, onboarded: true });
+      },
       dismissPrompt: () => update((current) => ({ ...current, snoozeUntilCount: current.entries.length + 2 })),
       prepareDraft: () => {
         let created: Draft | null = data.draft;
@@ -309,6 +366,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 from: message.sender,
                 text: message.text,
                 createdAt: message.createdAt,
+                ...(message.workerName ? { workerName: message.workerName } : {}),
               })),
             ],
             cases: current.cases.map((item) => {

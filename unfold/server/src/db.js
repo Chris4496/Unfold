@@ -95,11 +95,12 @@ CREATE TABLE IF NOT EXISTS cases (
 );
 
 CREATE TABLE IF NOT EXISTS messages (
-  id         TEXT PRIMARY KEY,
-  case_id    TEXT NOT NULL REFERENCES cases(id),
-  sender     TEXT NOT NULL CHECK (sender IN ('worker','student')),
-  text       TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  id               TEXT PRIMARY KEY,
+  case_id          TEXT NOT NULL REFERENCES cases(id),
+  sender           TEXT NOT NULL CHECK (sender IN ('worker','student')),
+  sender_worker_id TEXT REFERENCES workers(id), -- set when sender = 'worker'
+  text             TEXT NOT NULL,
+  created_at       TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_entries_device ON entries(device_id, created_at);
@@ -107,11 +108,27 @@ CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_messages_case ON messages(case_id, created_at);
 `;
 
+/**
+ * Guarded migrations for databases created by older server versions.
+ * Every migration checks for its column first, so it is idempotent and
+ * a no-op on fresh databases (where SCHEMA already has the column).
+ */
+export function migrateDb(db) {
+  const messageColumns = db
+    .prepare('PRAGMA table_info(messages)')
+    .all()
+    .map((col) => col.name);
+  if (!messageColumns.includes('sender_worker_id')) {
+    db.exec('ALTER TABLE messages ADD COLUMN sender_worker_id TEXT REFERENCES workers(id)');
+  }
+}
+
 /** Create (or open) a database and ensure the schema exists. */
 export function createDb(dbPath = './unfold.db') {
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
+  migrateDb(db);
   return db;
 }

@@ -1,0 +1,30 @@
+{
+  "entries": [
+    {
+      "clientId": "supp-e1",
+      "createdAt": "2026-10-03T08:00:00.000Z",
+      "deidentified": "Felt stressed about a heavy coursework deadline this week and stayed up late working on it.",
+      "topics": [
+        "academic"
+      ]
+    },
+    {
+      "clientId": "supp-e2",
+      "createdAt": "2026-10-03T12:00:00.000Z",
+      "deidentified": "Group project meeting felt tense because tasks were not divided fairly.",
+      "topics": [
+        "academic",
+        "group"
+      ]
+    },
+    {
+      "clientId": "supp-e3",
+      "createdAt": "2026-10-03T23:00:00.000Z",
+      "deidentified": "Sleep has been short and broken for several nights in a row.",
+      "topics": [
+        "sleep"
+      ]
+    }
+  ],
+  "links": []
+}

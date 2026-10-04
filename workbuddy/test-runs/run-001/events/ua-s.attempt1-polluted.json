@@ -1,0 +1,53 @@
+[
+  {
+    "run_id": "run-001",
+    "journey_version": "v2-approved",
+    "role_id": "UA-S",
+    "task_id": "UA-S",
+    "step_id": "S1-onboarding-read",
+    "sequence": 1,
+    "actor": "UA-S",
+    "action": "逐步閱讀 onboarding 三頁文案並記錄是否提及雲端整理／背景分析",
+    "channel": "UI",
+    "expected": "三頁均不提及「雲端整理／Cloud organisation」與「背景分析／background analysis」（告知缺口）",
+    "observed": "Step1『Say what is on your mind』只講自由記錄；Step2『It stays on your phone』講 ElevenLabs 轉寫＋錄音與全文稿存本機；Step3『You choose what is shared』講去標識在本機、批准才分享。三頁均未提及 cloud organisation、背景分析（background analysis）。告知缺口成立。",
+    "evidence_ref": "evidence/ua-s-step01.png;evidence/ua-s-step02.png;evidence/ua-s-step03.png",
+    "timestamp": "2026-10-03T17:04:10Z",
+    "data_classification": "synthetic",
+    "gate_status": "proceed"
+  },
+  {
+    "run_id": "run-001",
+    "journey_version": "v2-approved",
+    "role_id": "UA-S",
+    "task_id": "UA-S",
+    "step_id": "S1-onboarding-gate",
+    "sequence": 2,
+    "actor": "UA-S",
+    "action": "未勾選同意框時嘗試點擊 Start，驗證閘門",
+    "channel": "UI",
+    "expected": "未勾選時 Start 為 disabled，點擊無法完成引導",
+    "observed": "Start 按鈕在快照中標記 disabled；點擊後 URL 仍停留在 /onboarding，未進入主頁。閘門生效。",
+    "evidence_ref": "evidence/ua-s-step03.png",
+    "timestamp": "2026-10-03T17:04:25Z",
+    "data_classification": "synthetic",
+    "gate_status": "proceed"
+  },
+  {
+    "run_id": "run-001",
+    "journey_version": "v2-approved",
+    "role_id": "UA-S",
+    "task_id": "UA-S",
+    "step_id": "S1-onboarding-complete",
+    "sequence": 3,
+    "actor": "UA-S",
+    "action": "勾選同意框後點擊 Start 完成引導",
+    "channel": "UI",
+    "expected": "勾選後 Start 變可用，點擊後進入主頁",
+    "observed": "勾選後 Start 的 disabled 屬性消失；點擊後導向 http://localhost:8082/ 主頁，顯示『Your private space / Tap to record / Type instead』。整個 onboarding 無年齡詢問、無監護人同意欄位、無緊急支援文案（未成年人保護觀察）。",
+    "evidence_ref": "evidence/ua-s-step04.png;evidence/ua-s-step05.png",
+    "timestamp": "2026-10-03T17:04:47Z",
+    "data_classification": "synthetic",
+    "gate_status": "proceed"
+  }
+]

@@ -1,0 +1,60 @@
+{
+  "run_id": "run-001",
+  "journey_version": "v2-approved",
+  "role_id": "UA-W2",
+  "scorer": "UA-W2（社工第二人，合成，自評）",
+  "journey_scope": "註冊 → 待驗證閘門 → 驗證後隊列 → 競爭接案 → 回覆 → 學生撤回後的邊界 → 登出守衛",
+  "task_id": "UA-W2-stageC",
+  "timestamp": "2026-10-03T18:49:00Z",
+  "data_classification": "synthetic",
+  "dimensions": [
+    {
+      "id": "completeness",
+      "label": "完成度",
+      "max": 35,
+      "score": 33,
+      "理由": "整段旅程每一步都能走完：註冊（201＋自動登入＋偏好落庫）、待驗證期間被正確擋在隊列外、驗證後立即能進隊列並看到目標個案、競爭接案以 201 拿下、回覆送出並落庫（status=replied、messages=2）、撤回後列表正確移除個案、登出與未登入守衛生效。沒有任何一步因產品故障而中斷。扣分點：學生撤回後，個案頁仍提供回覆框（提示『awaiting your response (status: withdrawn)』），此時「我還能做什麼」的任務狀態不再自洽，完成度的尾段體驗模糊。",
+      "證據": "events/ua-w2.json seq 1–24；evidence/ua-w2-step01.png–step11.png；/tmp/w2-claim.json（201）；evidence/ua-w2-h6-direct-read.json",
+      "優點": "註冊→驗證→接案→回覆主鏈路零阻塞；每個動作都有即時可見的狀態回饋（VerificationPending、Replied、FIRST RESPONSE SENT 時間戳）；API 與 UI 狀態一致（curl 複核均吻合）。",
+      "缺點": "撤回後的個案頁任務狀態不自洽（已 Withdrawn 但仍提示可回覆），旅程尾段缺少明確的「此路已終」收尾。",
+      "建議": "撤回後在個案頁給出明確終態提示並停用回覆框，讓社工知道此個案已無後續動作。"
+    },
+    {
+      "id": "clarity_expectation",
+      "label": "清晰與預期",
+      "max": 20,
+      "score": 12,
+      "理由": "多數頁面資訊清楚（隊列卡片欄位完整、閘門頁點名帳號與機構），但三處與預期落差明顯：(1) 歷史訊息把前任社工的回覆標成「You」，我一度以為是自己發過的訊息，發送者身份不可辨；(2) rematch 徽章顯示 ×2，語義不清（數字實際等於累計 claim_count，而非 rematch 次數）；(3) 學生撤回後，個案頁除 status 徽章變 Withdrawn 外幾乎無任何變化，預期的「This summary is no longer shared.」式提示完全不存在，我無法從頁面理解撤回對我的可見範圍意味著什麼。",
+      "證據": "events/ua-w2.json seq 12、15、20；evidence/ua-w2-step06.png（rematch ×2）、step07.png（前任回覆標 You）、step10.png（撤回後個案頁）",
+      "優點": "閘門與錯誤文案具體（not_verified、already_claimed、not_your_case、email_already_registered 均有對應 UI 文案）；隊列卡片資訊密度恰當（period、language、waiting、topics、main_concerns）。",
+      "缺點": "訊息發送者身份混淆（UI 標 You、API 僅標 sender=worker）；撤回這種重大狀態變更在 UI 層幾乎無感；徽章語義與文件預期不符。",
+      "建議": "訊息標示區分發送社工（至少『Previous worker』）；撤回後以 banner 明確告知可見性狀態；徽章文案與語義對齊（如 rematch 次數與 claim 次數分開）。"
+    },
+    {
+      "id": "content_control_correction",
+      "label": "內容控制與修正",
+      "max": 25,
+      "score": 9,
+      "理由": "如實記錄觀察（設計對錯由委託人裁定）：(1) 摘錄號稱 deidentified，但 Excerpt 明文可見學生姓名「陳小明」，兩任社工核對一致；(2) 學生撤回同意後，我的可讀範圍沒有任何可感知的變化——UI 個案頁摘錄與訊息照舊顯示，API 直讀 GET case 與 GET messages 均回 200，6 條摘錄（含姓名明文）與 3 條訊息完整返回，路由只檢查所有權不檢查狀態（claimed_by 已清空為 null 但仍放行）；(3) 撤回後回覆框仍可用。從社工視角，內容邊界對我不可見也不可预期；從評估視角，撤回前後的內容控制無差異。",
+      "證據": "evidence/ua-w2-h6-direct-read.json（HTTP 200、status=withdrawn、claimed_by=null、excerpts 6 條含「陳小明」）、evidence/ua-w2-h6-direct-read-messages.json（HTTP 200、3 條）；evidence/ua-w2-step10.png；events/ua-w2.json seq 20–22",
+      "優點": "可見性邊界的下限守住了：兩任社工均未見 device_id、音頻、全文稿／逐字稿（UI 與 API 皆然）；前任社工在所有權轉移後被 403 not_your_case 正確隔離。",
+      "缺點": "去識別化有缺口（姓名明文）；撤回同意對已接案社工的可讀範圍不產生任何效果（UI＋API 雙層皆然）；撤回態下仍允許回覆動作呈現為可用。",
+      "建議": "摘錄落庫／回傳前做姓名實體遮蔽；狀態為 withdrawn 時，case 與 messages 路由除檢查 claimed_by 外應檢查狀態並拒絕或降級回傳；UI 同步停用回覆框。"
+    },
+    {
+      "id": "failure_recovery",
+      "label": "失敗恢復",
+      "max": 20,
+      "score": 17,
+      "理由": "旅程中遇到的「失敗」多為預期內閘門，恢復路徑都清楚：未驗證被擋時頁面明確指引（可先去 Profile）；重複註冊 409 有專屬文案；競爭接案落敗方收到 409 already_claimed（同伴 UA-W1 驗證）；前任社工 403 not_your_case 邊界清晰；登出後未登入訪 /queue 被正確導回 /login。沒有遇到無法恢復的死路。扣分點：學生撤回這個「外部失敗」沒有任何通知或恢復引導——我是自己刷新列表才發現個案消失，個案頁也未告訴我接下來該做什麼（例如回隊列接新案）。",
+      "證據": "events/ua-w2.json seq 5–10、13–14、23–24；evidence/ua-w2-step03.png、step09.png、step11.png",
+      "優點": "所有閘門類失敗（未驗證、重複註冊、接案競爭、所有權、未登入）都有明確錯誤碼＋對應 UI 文案，恢復路徑直觀；登出守衛完整（token 清除＋路由守衛）。",
+      "缺點": "撤回屬於社工被動承受的狀態變更，產品無主動通知（無 badge、無 banner、無訊息），恢復動作（下一步去哪）全靠自己摸索。",
+      "建議": "個案被撤回時給社工一個明確信號（列表提示或個案頁 banner），並提供「返回隊列」的恢復導引。"
+    }
+  ],
+  "total_score": 71,
+  "total_max": 100,
+  "summary": "主鏈路（註冊→驗證→接案→回覆）完成度高、閘門與錯誤處理清晰；主要失分在內容控制維度：撤回同意對已接案社工的可讀範圍在 UI 與 API 雙層均無效果（H6 直讀 200），加上摘錄姓名明文與撤回態無提示，令「內容控制與修正」和「清晰與預期」明顯承壓。",
+  "evidence_index": "events/ua-w2.json（24 條）；evidence/ua-w2-step01.png–step11.png；evidence/ua-w2-h6-direct-read.json；evidence/ua-w2-h6-direct-read-messages.json"
+}

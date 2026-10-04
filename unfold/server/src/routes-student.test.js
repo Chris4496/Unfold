@@ -100,6 +100,11 @@ function insertWorker() {
   return id;
 }
 
+/** Look up the server-side device id for a device token. */
+function deviceIdForToken(token) {
+  return db.prepare('SELECT id FROM devices WHERE token = ?').get(token).id;
+}
+
 before(async () => {
   db = createDb(':memory:');
   const app = createApp({ db, config: testConfig });
@@ -190,6 +195,54 @@ test('sync upserts by (device, clientId) and leaves unchanged entries alone', as
   assert.equal(again.status, 200);
   const list = await api('/api/entries', { token });
   assert.equal(list.body.entries.length, 3); // still three rows, not six
+});
+
+test('sync accepts eventAt updates for existing records and invalidates old+new day caches', async () => {
+  const token = await freshDevice();
+  const deviceId = deviceIdForToken(token);
+  const entry = {
+    clientId: 'ev1',
+    createdAt: '2025-01-06T09:00:00.000Z',
+    deidentified: 'I could not sleep before the exam.',
+    tokens: [],
+  };
+  const eventAtOf = () =>
+    db.prepare('SELECT event_at FROM entries WHERE device_id = ? AND client_id = ?').get(deviceId, 'ev1')
+      .event_at;
+
+  // Initial sync without eventAt: event_at defaults to createdAt.
+  await api('/api/entries/sync', { method: 'POST', body: { entries: [entry] }, token });
+  assert.equal(eventAtOf(), '2025-01-06T09:00:00.000Z');
+
+  // Prime the old day's summary cache.
+  await api('/api/summaries/2025-01-06', { token });
+  assert.ok(
+    db.prepare('SELECT * FROM summaries WHERE device_id = ? AND day = ?').get(deviceId, '2025-01-06')
+  );
+
+  // Re-sync with a corrected eventAt: event_at moves and the OLD day's
+  // cached summary is dropped as well.
+  const moved = await api('/api/entries/sync', {
+    method: 'POST',
+    body: { entries: [{ ...entry, eventAt: '2024-12-20T09:00:00.000Z' }] },
+    token,
+  });
+  assert.equal(moved.status, 200);
+  assert.equal(eventAtOf(), '2024-12-20T09:00:00.000Z');
+  assert.equal(
+    db.prepare('SELECT * FROM summaries WHERE device_id = ? AND day = ?').get(deviceId, '2025-01-06'),
+    undefined,
+    'old-day summary cache must be invalidated when event_at moves'
+  );
+
+  // Re-syncing WITHOUT eventAt must not clobber the stored event_at.
+  const noEventAt = await api('/api/entries/sync', {
+    method: 'POST',
+    body: { entries: [{ ...entry, deidentified: 'Still not sleeping before the exam.' }] },
+    token,
+  });
+  assert.equal(noEventAt.status, 200);
+  assert.equal(eventAtOf(), '2024-12-20T09:00:00.000Z');
 });
 
 test('sync of a changed entry reclassifies it and clears the affected summary cache', async () => {
@@ -309,6 +362,83 @@ test('analysis returns a default shape before any sync', async () => {
     genai: false,
     updatedAt: null,
   });
+});
+
+// ---------------------------------------------------------------------------
+// Cloud-data deletion lifecycle
+// ---------------------------------------------------------------------------
+
+test('DELETE /api/entries removes all entries plus derived data, but never cases', async () => {
+  const token = await freshDevice();
+  await syncSamples(token);
+  const caseId = await createCase(token);
+  const deviceId = deviceIdForToken(token);
+
+  // Prime derived artefacts: summary cache, background analysis, a link.
+  await api('/api/summaries/2025-01-06', { token });
+  const byClient = Object.fromEntries(
+    db.prepare('SELECT id, client_id FROM entries WHERE device_id = ?')
+      .all(deviceId)
+      .map((r) => [r.client_id, r.id])
+  );
+  db.prepare(
+    `INSERT INTO links (id, device_id, from_entry_id, to_entry_id, relation, note, created_at)
+     VALUES (?, ?, ?, ?, 'related', NULL, ?)`
+  ).run(newId(), deviceId, byClient.e1, byClient.e2, new Date().toISOString());
+  assert.ok(db.prepare('SELECT * FROM analyses WHERE device_id = ?').get(deviceId));
+
+  const res = await api('/api/entries', { method: 'DELETE', token });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.deleted, 3);
+
+  for (const table of ['entries', 'links', 'summaries', 'analyses']) {
+    assert.equal(
+      db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE device_id = ?`).get(deviceId).n,
+      0,
+      `${table} must be empty after the purge`
+    );
+  }
+
+  // Cases and their messages are NOT part of the deletion lifecycle.
+  const active = await api('/api/cases/active', { token });
+  assert.equal(active.body.case.id, caseId);
+
+  // Auth is required.
+  assert.equal((await api('/api/entries', { method: 'DELETE' })).status, 401);
+});
+
+test('DELETE /api/entries/:clientId removes one entry, its links and its day summary cache', async () => {
+  const token = await freshDevice();
+  await syncSamples(token);
+  const deviceId = deviceIdForToken(token);
+
+  // Unknown clientId -> 404.
+  const missing = await api('/api/entries/nope', { method: 'DELETE', token });
+  assert.equal(missing.status, 404);
+  assert.equal(missing.body.error, 'entry_not_found');
+
+  // Prime the day summary cache and a link involving e1.
+  await api('/api/summaries/2025-01-06', { token });
+  const byClient = Object.fromEntries(
+    db.prepare('SELECT id, client_id FROM entries WHERE device_id = ?')
+      .all(deviceId)
+      .map((r) => [r.client_id, r.id])
+  );
+  db.prepare(
+    `INSERT INTO links (id, device_id, from_entry_id, to_entry_id, relation, note, created_at)
+     VALUES (?, ?, ?, ?, 'related', NULL, ?)`
+  ).run(newId(), deviceId, byClient.e1, byClient.e2, new Date().toISOString());
+
+  const res = await api('/api/entries/e1', { method: 'DELETE', token });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.deleted, 1);
+
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM entries WHERE device_id = ?').get(deviceId).n, 2);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM links WHERE device_id = ?').get(deviceId).n, 0);
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS n FROM summaries WHERE device_id = ? AND day = ?').get(deviceId, '2025-01-06').n,
+    0
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -443,6 +573,33 @@ test('case messages: student can post and read; withdrawn cases reject new messa
     ).status,
     400
   );
+});
+
+test('student messages are truncated to 500 chars and expose workerName', async () => {
+  const token = await freshDevice();
+  const id = await createCase(token);
+
+  const long = await api(`/api/cases/${id}/messages`, {
+    method: 'POST',
+    body: { text: 'y'.repeat(800) },
+    token,
+  });
+  assert.equal(long.status, 201);
+  assert.equal(long.body.message.text.length, 500);
+
+  // Simulate a worker reply carrying sender_worker_id.
+  const workerId = insertWorker();
+  db.prepare(
+    `INSERT INTO messages (id, case_id, sender, sender_worker_id, text, created_at)
+     VALUES (?, ?, 'worker', ?, ?, ?)`
+  ).run(newId(), id, workerId, 'worker reply', new Date().toISOString());
+
+  const list = await api(`/api/cases/${id}/messages`, { token });
+  assert.equal(list.status, 200);
+  const workerMsg = list.body.messages.find((m) => m.sender === 'worker');
+  assert.equal(workerMsg.workerName, 'W');
+  const studentMsg = list.body.messages.find((m) => m.sender === 'student');
+  assert.equal(studentMsg.workerName, null);
 });
 
 test('ownership: another device cannot touch someone else\'s case', async () => {

@@ -1,12 +1,34 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
-import { Back, Button, Card, Field, Notice, Screen, T } from '../src/components/ui';
+import { Back, Button, ButtonRow, Card, Field, Notice, Screen, T } from '../src/components/ui';
 import { formatDay } from '../src/lib/dates';
 import { useStore } from '../src/store';
 import { colors } from '../src/theme';
 
 const REFRESH_MS = 15000;
+
+/**
+ * Two-step inline confirmation (Alert.alert is a no-op on web, so the
+ * confirm is built from regular components like the other delete flows).
+ */
+function WithdrawButton({ onWithdraw }: { onWithdraw: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  if (confirming) {
+    return (
+      <View style={{ gap: 10 }}>
+        <T weight="bold">
+          Withdraw sharing? The social worker will no longer see your summary or messages. This cannot be undone.
+        </T>
+        <ButtonRow>
+          <Button label="Cancel" tone="secondary" onPress={() => setConfirming(false)} />
+          <Button label="Withdraw" onPress={onWithdraw} />
+        </ButtonRow>
+      </View>
+    );
+  }
+  return <Button label="Withdraw sharing" tone="secondary" onPress={() => setConfirming(true)} />;
+}
 
 export default function CaseScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -88,17 +110,17 @@ export default function CaseScreen() {
         <T size={15} color={colors.muted} style={{ marginTop: 6 }}>{item.summary.recentChange}</T>
       </Card>
       {messages.map((message) => (
-        <Card key={message.id} title={message.from === 'worker' ? 'Social worker' : 'You'}>
+        <Card key={message.id} title={message.from === 'worker' ? (message.workerName ? `${message.workerName} (social worker)` : 'Social worker') : 'You'}>
           <T size={15}>{message.text}</T>
           <T size={12} color={colors.faint} style={{ marginTop: 6 }}>{formatDay(message.createdAt)}</T>
         </Card>
       ))}
-      {waiting ? <Button label="Withdraw sharing" tone="secondary" onPress={() => store.withdrawCase(item.id)} /> : null}
+      {waiting ? <WithdrawButton onWithdraw={() => store.withdrawCase(item.id)} /> : null}
       {item.status === 'replied' ? (
         <View style={{ gap: 10 }}>
           <Button label="Continue the conversation" onPress={() => store.continueCase(item.id)} />
           <Button label="Ask for someone else" tone="secondary" onPress={() => store.rematchCase(item.id)} />
-          <Button label="Withdraw sharing" tone="secondary" onPress={() => store.withdrawCase(item.id)} />
+          <WithdrawButton onWithdraw={() => store.withdrawCase(item.id)} />
         </View>
       ) : null}
       {item.status === 'continued' ? (
@@ -107,7 +129,7 @@ export default function CaseScreen() {
             <Field value={text} onChangeText={setText} placeholder="Your reply" multiline />
           </Card>
           <Button label="Ask for someone else" tone="secondary" onPress={() => store.rematchCase(item.id)} />
-          <Button label="Withdraw sharing" tone="secondary" onPress={() => store.withdrawCase(item.id)} />
+          <WithdrawButton onWithdraw={() => store.withdrawCase(item.id)} />
         </View>
       ) : null}
     </Screen>

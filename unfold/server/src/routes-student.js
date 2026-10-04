@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { newId, requireDevice } from './auth.js';
 import { isWaiting } from './sweeper.js';
+import { purgeDeviceCloudData } from './purge.js';
 import {
   classifyEntry,
   linkEntries,
@@ -29,6 +30,8 @@ import {
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_SYNC_ENTRIES = 200;
 const RECENT_LINK_WINDOW = 50;
+/** Max stored length of a student message (aligned with the client limit). */
+const MAX_MESSAGE_CHARS = 500;
 
 /** Wrap async handlers so rejections reach the central error handler. */
 function asyncHandler(fn) {
@@ -132,7 +135,11 @@ export function studentRouter(db, config = {}) {
        ORDER BY created_at DESC LIMIT 1`
     ),
     messageCount: db.prepare('SELECT COUNT(*) AS n FROM messages WHERE case_id = ?'),
-    messagesForCase: db.prepare('SELECT * FROM messages WHERE case_id = ? ORDER BY created_at ASC'),
+    messagesForCase: db.prepare(
+      `SELECT m.*, w.name AS worker_name FROM messages m
+       LEFT JOIN workers w ON w.id = m.sender_worker_id
+       WHERE m.case_id = ? ORDER BY m.created_at ASC`
+    ),
     insertMessage: db.prepare(
       'INSERT INTO messages (id, case_id, sender, text, created_at) VALUES (?, ?, ?, ?, ?)'
     ),
@@ -222,8 +229,14 @@ export function studentRouter(db, config = {}) {
       for (const entry of entries) {
         const clientId = entry.clientId.trim();
         const createdAt = entry.createdAt.trim();
-        const eventAt = (entry.eventAt ?? createdAt).trim();
         const existing = stmts.entryByClientId.get(deviceId, clientId);
+        // eventAt: an explicit payload value always wins (including updating
+        // an existing record's event_at); when omitted, keep the stored
+        // event_at for known records and default to createdAt for new ones.
+        const eventAt =
+          entry.eventAt !== undefined
+            ? entry.eventAt.trim()
+            : (existing?.event_at ?? createdAt);
 
         const unchanged =
           existing &&
@@ -257,6 +270,11 @@ export function studentRouter(db, config = {}) {
         ];
         if (existing) {
           stmts.updateEntry.run(...row, deviceId, clientId);
+          // If the entry moved to a different day, the OLD day's cached
+          // summary is affected too and must be regenerated.
+          if (existing.event_at !== eventAt) {
+            changedDays.add(dayOf(existing.event_at || existing.created_at));
+          }
         } else {
           stmts.insertEntry.run(newId(), deviceId, clientId, ...row);
         }
@@ -288,6 +306,43 @@ export function studentRouter(db, config = {}) {
       createdAt: link.created_at,
     }));
     return res.json({ entries: rows.map(publicEntry), links });
+  });
+
+  // -------------------------------------------------------------------------
+  // DELETE /api/entries — remove ALL synced entries for this device plus
+  // derived artefacts (links, summary cache, background analysis). Cases and
+  // their messages are NOT affected (see CONTRACT.md). -> 200 { deleted: n }
+  // -------------------------------------------------------------------------
+  router.delete('/entries', (req, res) => {
+    const deleted = purgeDeviceCloudData(db, req.device.id);
+    return res.json({ deleted });
+  });
+
+  // -------------------------------------------------------------------------
+  // DELETE /api/entries/:clientId — remove one synced entry. Links that
+  // reference it and the cached summary of its day are cleaned up too; the
+  // background analysis is regenerated on the next sync.
+  // -> 200 { deleted: 1 } | 404 { error: 'entry_not_found' }
+  // -------------------------------------------------------------------------
+  router.delete('/entries/:clientId', (req, res) => {
+    const deviceId = req.device.id;
+    const row = stmts.entryByClientId.get(deviceId, req.params.clientId);
+    if (!row) return res.status(404).json({ error: 'entry_not_found' });
+    const tx = db.transaction(() => {
+      db.prepare(
+        'DELETE FROM links WHERE device_id = ? AND (from_entry_id = ? OR to_entry_id = ?)'
+      ).run(deviceId, row.id, row.id);
+      db.prepare('DELETE FROM summaries WHERE device_id = ? AND day = ?').run(
+        deviceId,
+        dayOf(row.event_at || row.created_at)
+      );
+      db.prepare('DELETE FROM entries WHERE device_id = ? AND client_id = ?').run(
+        deviceId,
+        req.params.clientId
+      );
+    });
+    tx();
+    return res.json({ deleted: 1 });
   });
 
   // -------------------------------------------------------------------------
@@ -501,6 +556,7 @@ export function studentRouter(db, config = {}) {
       sender: message.sender,
       text: message.text,
       createdAt: message.created_at,
+      workerName: message.worker_name ?? null,
     }));
     return res.json({ messages });
   });
@@ -519,7 +575,7 @@ export function studentRouter(db, config = {}) {
     const message = {
       id: newId(),
       sender: 'student',
-      text: text.trim().slice(0, 1000),
+      text: text.trim().slice(0, MAX_MESSAGE_CHARS),
       createdAt: new Date().toISOString(),
     };
     stmts.insertMessage.run(message.id, row.id, message.sender, message.text, message.createdAt);

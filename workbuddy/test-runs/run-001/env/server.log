@@ -1,0 +1,2 @@
+[server] Unfold backend listening on http://localhost:8787
+[server] GenAI: NOT configured — deterministic local fallbacks will be used (genai=0)

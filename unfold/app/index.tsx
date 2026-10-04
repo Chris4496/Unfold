@@ -44,6 +44,13 @@ export default function HomeScreen() {
     };
   }, [store.cloudOrg, store.deviceToken, store.entries.length]);
 
+  // Re-check the shared case on mount so a worker reply surfaces as the
+  // "A social worker replied" notice without opening the case screen first.
+  useEffect(() => {
+    if (store.openCase?.remote) void store.refreshCaseFromServer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.openCase?.id]);
+
   if (!store.ready) return <Screen><View /></Screen>;
   if (!store.onboarded) return <Redirect href="/onboarding" />;
 

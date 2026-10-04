@@ -1,0 +1,52 @@
+{
+  "run_id": "run-001",
+  "journey_version": "v2-approved",
+  "role_id": "UA-U",
+  "task_id": "UA-U-stage3",
+  "scored_at": "2026-10-03T18:38:39Z",
+  "journey_scope": "J2→J6 全段（階段1：建立記錄→同步核對→提示→批准分享；階段2：Notice 觀察→讀 W1 回覆→Ask for someone else；階段3：讀 W2 回覆→continue→互傳訊息→withdraw）",
+  "total_score": 88,
+  "dimensions": [
+    {
+      "dimension": "完成度",
+      "max": 35,
+      "score": 32,
+      "reason": "三階段任務書指定步驟全部執行並留證：階段1（onboarding 閘門、雲端開關＋token 註冊、7 條合成記錄、API 去標識核對、Not now→snooze→+2 條提示重現、/prompt 聲明、/review 編輯＋TokenRow＋摘錄核對、Approve sharing→/shared 遠端文案、curl 個案狀態）；階段2（Notice 等待觀察、進 /case 讀 W1 回覆逐字核對、markReplySeen 狀態機驗證、Ask for someone else→回隊列、claimCount 1→2）；階段3（讀 W2 回覆逐字核對、continue→status=continued＋輸入框、送出學生訊息 108 字元≤500→訊息串 3 條、withdraw→Nothing is shared right now→server case=null→openCase 清空）。扣分項：①提示時機項因 D1（eventAt 不同步→雲端分析永遠 approaching=false→提示被壓制）客觀上只能經繞道（關雲端走 on-device 規則）達成，依 supervisor 裁定記「部分達成」而非通過；②大量 UI 操作依賴 JS dispatchEvent/native setter 繞道，非 100% 原生互動路徑（產品 handler 本身已核實正常）。",
+      "evidence": "events/ua-u.json seq 1–35（階段1：1–21、階段2：22–27、階段3：28–35）；evidence/ua-u-step01..27.png＋attempt1-step01..09.png；API 證據 ua-u-api-*.json 共 9 份",
+      "strengths": "無任何指定步驟被跳過或未執行；D1 阻塞項如實記為部分達成而非假造通過；每步均有 UI＋API 雙端核對（狀態機每個轉換：queued→claimed→replied→queued→claimed→replied→continued→withdrawn 全部驗證）。",
+      "weaknesses": "server rules 驅動提示路徑因產品缺陷無法走到（非執行不力但占用完成度額度）；互傳訊息僅完成學生→社工單向（continue 後等不到即時 W2 回覆屬正常時序，非缺失）。",
+      "next_step": "D1 修復後重跑一次「雲端開啟→server rules 驅動提示」原生路徑，補上完成度缺口。"
+    },
+    {
+      "dimension": "清晰與預期",
+      "max": 20,
+      "score": 17,
+      "reason": "多數任務書預期與實測對齊（勾選閘門、雲端預設關、去標識英文四類 token、社工回覆可讀、rematch 後歷史保留、continue 後出現輸入框、withdraw 後雙端清空）。三處預期偏離均有程式級證據並如實記錄：①D1——任務書預期雲端開啟時提示可出現，實際被壓制（store.tsx:218-222 setEventTime 不重新同步 eventAt＋server genai.js:508 days.size≥2 由 event_at 推導＋index.tsx:79 雲端分析優先壓制本機規則）；②D2——任務書預期主頁出現 Notice「A social worker replied」，實際不可達（主頁無輪詢，Notice 依賴本機 store openCase.status==='replied' && !seenReply（index.tsx:74），refreshCaseFromServer 僅 /case 掛載觸發（case.tsx:22-24），停留主頁者永遠看不到）；③rematch 字面預期 status=rematch 與 server 實作 status=queued（routes-student.js:486-492）不符——任務書表述問題，產品語義正確。D2 依指示計入本維度扣分。",
+      "evidence": "events/ua-u.json seq 9–12（D1 提示壓制＋繞道）、seq 22（D2 Notice 不可達，ua-u-step19/21.png）、seq 26–27（rematch 字面差異）、seq 28–35（階段3 預期全對齊）",
+      "strengths": "每個偏離都給出肯定/否定結論＋程式碼行號級原因，非主觀印象；D2 的「時延」如實記為無限而非估計值；階段3 全部 5 步預期（status=continued、3 條訊息、case=null、openCase 清空、Nothing 文案）100% 命中。",
+      "weaknesses": "D1/D2 兩個核心預期（提示、Notice）在雲端流程下同時失效，代表「被動等待」使用者路徑的預期模型整體不成立，本維度不能給高分；任務書與實作的字面差異（rematch/queued）需現場判讀。",
+      "next_step": "任務書下一版：把 Notice 可達性條件（需先進 /case）寫明或列為缺陷檢查點；rematch 預期改寫為 status=queued（回隊列）。"
+    },
+    {
+      "dimension": "內容控制與修正",
+      "max": 25,
+      "score": 22,
+      "reason": "全程合成資料紀律：7 條記錄、/review 編輯後兩句、階段3 學生訊息（「Yes please — the group project is the main thing. One person did not do any work and the deadline is Friday.」，108 字元≤500）全部為任務書指定或合成措辭，data_classification=synthetic 貫穿 35 條事件；去標識核對落實到 API 層（英文識別字串 grep 無殘留、tokens 四類正確、[陳小明] 中文姓名缺口如實記錄未掩飾）。修正紀律：attempt-1 被 UA-S 互染（--session-name 非隔離）後未硬跑，依編排指示保留 9 張污染截圖、用 --session ua-u 從頭重跑並先驗證 localStorage 全空；階段2 rematch 前後、階段3 continue/send/withdraw 前後均以本機 store＋server API 雙端核對，訊息文案逐字比對（W1/W2 回覆、學生送出版全部逐字一致）。token 全程未外洩（僅回報長度 64，所有 dump 均 redacted）。扣分項：attempt-1 污染本身屬可避免的環境踩坑（雖主因在工具文件不明）；階段3 初期曾誤以相對路徑截圖失敗一次（立即改用絕對路徑修正，無資料影響）。",
+      "evidence": "events/ua-u.json 全程 data_classification=synthetic；evidence/ua-u-api-entries.json（去標識核對）、ua-u-api-messages-stage3-*.json（逐字核對）；ua-u-attempt1-step01..09.png（隔離存檔）；階段3 send 前後本機/server createdAt 僅差 3ms（.970Z vs .973Z）證未假造",
+      "strengths": "污染嘗試與正式嘗試完全分離可審計；所有關鍵文案（社工回覆×2、學生訊息、withdraw 文案）均逐字核對；每個狀態轉換都有前後對照證據；敏感值（token）處理紀律一致。",
+      "weaknesses": "環境隔離問題需付出一次完整重跑成本；自動化操作（截圖路徑、ref 定位）偶有小型失誤需當場修正。",
+      "next_step": "環境手冊把「--session 才隔離」「截圖用絕對路徑」列為開跑前檢查清單，避免每個 role 重複踩坑。"
+    },
+    {
+      "dimension": "失敗恢復",
+      "max": 20,
+      "score": 17,
+      "reason": "四次主要障礙均恢復且無資料污染：①attempt-1 session 互染 → 依裁定隔離舊證據→全新隔離 session 重跑，重跑前先驗證乾淨狀態（localStorage 全空、自動導向 /onboarding）；②D1 提示被壓制 → 升級 supervisor，按裁定方案 A（關雲端走 on-device）繼續，且把缺陷鏈三段（setEventTime 不同步→server days 推導→雲端優先壓制）逐段用 curl＋程式碼核實，缺陷本身成為正式發現而非被繞過遺忘；③agent-browser click 對 RN Web Pressable/BUTTON 無效 → JS dispatchEvent（pointer/mouse/click 序列）繞道，並核實 dispatch 後產品狀態正確變更（證 handler 正常、屬工具問題）；④React controlled textarea 無法直接填值 → native value setter＋input event 繞道，送出後 server 落庫核對一致。扣分項：D1 繞道與隔離重跑均需 supervisor 介入裁定，非全自主恢復；D2（Notice 不可達）屬「觀察目標本身不存在」，無恢復可言，只能如實記錄。",
+      "evidence": "gate 裁定記錄（D1 方案 A）；events/ua-u.json seq 1（隔離驗證）、seq 9–12（D1 繞道全過程）、seq 22（D2 記錄）、seq 30/32（dispatchEvent/native setter 繞道後狀態核實）",
+      "strengths": "每次恢復都有驗證步驟（隔離後空態驗證、繞道後狀態雙端核對）；環境故障、工具限制、產品缺陷三類在事件中明確區分；缺陷繞道後仍回頭補齊缺陷本身的證據鏈。",
+      "weaknesses": "兩次關鍵恢復依賴 supervisor 裁定；繞道手段（JS 事件注入）與真實使用者互動仍有差距，恢復品質受限於工具能力。",
+      "next_step": "把 dispatchEvent 點擊、native setter 填值、session 隔離驗證沉澱為本測試環境的標準操作手冊；D1/D2 修復後安排回歸。"
+    }
+  ],
+  "notes": "總分 88/100 為逐維加總（32+17+22+17）。此為 UA-U 旅程執行品質自評，非產品總分。產品問題彙總：D1（重大：eventAt 不再同步→雲端開啟時支援提示被壓制，提示時機項部分達成）、D2（主頁 Notice 不可達：主頁無輪詢＋Notice 依賴本機未刷新狀態）、D3（新：Withdraw sharing 為 destructive action 但無二次確認對話框，case.tsx:96/101/110 onPress 直接執行）、中文姓名未去標識上雲並流入個案摘錄、雲端關閉期間記錄無 backfill、server fallback 關鍵字不覆蓋中文（粵語 topics=[]）、buildDraft 摘錄固定取最近 6 條（設計取捨）。"
+}

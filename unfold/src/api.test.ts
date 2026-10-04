@@ -4,6 +4,8 @@ import {
   analysisWithFallback,
   askWithFallback,
   daySummaryWithFallback,
+  deleteCloudEntries,
+  deleteCloudEntry,
   detectCaseLanguage,
   respondWithFallback,
   setCloudConsent,
@@ -86,6 +88,54 @@ test('entry sync sends deidentified text only — never the transcript', async (
     const body = JSON.parse(raw) as { entries: Record<string, unknown>[] };
     assert.deepEqual(Object.keys(body.entries[0]).sort(), ['clientId', 'createdAt', 'deidentified', 'tokens']);
     assert.equal(body.entries[0].deidentified, entry.deidentified);
+  } finally {
+    restore();
+  }
+});
+
+test('turning cloud consent off requests a cloud purge in the same call', async () => {
+  const { calls, restore } = mockFetch(() => ({ deviceId: 'dev-1', cloudOrg: false, created_at: 'x' }));
+  try {
+    const result = await setCloudConsent('token-123', false, { purgeCloud: true });
+    assert.equal(result.cloudOrg, false);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].init.method, 'PUT');
+    assert.deepEqual(JSON.parse(String(calls[0].init.body)), { cloudOrg: false, purgeCloud: true });
+  } finally {
+    restore();
+  }
+});
+
+test('cloud entry deletion calls the agreed DELETE routes with the device token', async () => {
+  const { calls, restore } = mockFetch(() => ({ deleted: 1 }));
+  try {
+    await deleteCloudEntries('token-123');
+    await deleteCloudEntry('token-123', 'entry-9');
+    assert.equal(calls.length, 2);
+
+    assert.ok(calls[0].url.endsWith('/api/entries'));
+    assert.equal(calls[0].init.method, 'DELETE');
+    assert.equal((calls[0].init.headers as Record<string, string>).authorization, 'Bearer token-123');
+
+    assert.ok(calls[1].url.endsWith('/api/entries/entry-9'));
+    assert.equal(calls[1].init.method, 'DELETE');
+    assert.equal((calls[1].init.headers as Record<string, string>).authorization, 'Bearer token-123');
+  } finally {
+    restore();
+  }
+});
+
+test('sync payload carries an updated eventAt so re-syncs move the entry', async () => {
+  const entry = sampleEntry('A hard day at school.');
+  const updated = { ...entry, eventAt: '2026-09-28T09:00:00.000Z' };
+  const { calls, restore } = mockFetch(() => ({
+    results: [{ clientId: updated.id, topics: ['academic'], attributes: ['event'], uncertainty: {}, genai: false }],
+  }));
+  try {
+    await syncEntries('token-123', [toSyncPayload(updated)]);
+    const body = JSON.parse(String(calls[0].init.body)) as { entries: Record<string, unknown>[] };
+    assert.equal(body.entries[0].eventAt, '2026-09-28T09:00:00.000Z');
+    assert.equal(body.entries[0].createdAt, entry.createdAt);
   } finally {
     restore();
   }

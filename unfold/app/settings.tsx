@@ -49,6 +49,17 @@ export default function SettingsScreen() {
           and audio never leave this phone.
         </T>
         <T size={14} color={colors.muted} style={{ marginTop: 8 }}>
+          Turning it on also sends the de-identified text of notes already on this phone (a one-off backfill). Turning it
+          off deletes every cloud copy of your notes from the server. Deleting a note or using “Delete everything” below
+          also deletes the matching cloud copies.
+        </T>
+        <T size={14} color={colors.muted} style={{ marginTop: 8 }}>
+          De-identification happens on this phone and covers common English and Chinese names, schools, street addresses
+          and estates, phone numbers and email addresses — replaced with markers like [PERSON] before anything is sent.
+          It is best-effort: uncommon names or unusual spellings can be missed, and ordinary words that look like names
+          are left alone, so always read a summary before approving it.
+        </T>
+        <T size={14} color={colors.muted} style={{ marginTop: 8 }}>
           This is separate from ElevenLabs transcription (which only turns recordings into text) and separate from
           sharing a summary with a social worker. You choose each one on its own, and you can turn this off at any time.
         </T>

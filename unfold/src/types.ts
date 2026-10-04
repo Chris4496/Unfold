@@ -18,6 +18,8 @@ export type Entry = {
   genai?: boolean;
   /** Server-reported classification uncertainty, when synced (shape owned by the server). */
   uncertainty?: unknown;
+  /** True once the cloud organiser has acknowledged this entry (scopes cloud deletes). */
+  synced?: boolean;
 };
 
 export type Excerpt = {
@@ -56,6 +58,8 @@ export type Message = {
   from: 'worker' | 'student';
   text: string;
   createdAt: string;
+  /** Display name of the replying social worker, when the server provides one. */
+  workerName?: string;
 };
 
 export type Persisted = {

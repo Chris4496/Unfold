@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { newDeviceToken, requireDevice } from '../auth.js';
+import { purgeDeviceCloudData } from '../purge.js';
 
 /**
  * Deterministic device id derived from the client installId so that
@@ -50,17 +51,29 @@ export function devicesRouter(db) {
     return res.status(201).json({ ...publicDevice(device), token: device.token });
   });
 
-  // PUT /api/devices/me/consent { cloudOrg } — the INDEPENDENT cloud-
-  // organisation authorisation. Only when cloudOrg is true may deidentified
-  // text leave the device; original transcripts/audio never sync regardless.
+  // PUT /api/devices/me/consent { cloudOrg, purgeCloud? } — the INDEPENDENT
+  // cloud-organisation authorisation. Only when cloudOrg is true may
+  // deidentified text leave the device; original transcripts/audio never
+  // sync regardless.
+  //
+  // Withdrawal with purge: { cloudOrg: false, purgeCloud: true } also
+  // deletes ALL of the device's synced cloud data (entries, links, summary
+  // cache, background analysis) — same as DELETE /api/entries. Cases and
+  // their messages are NOT touched. The response then includes `deleted`.
   router.put('/me/consent', requireDevice(db), (req, res) => {
-    const { cloudOrg } = req.body || {};
+    const { cloudOrg, purgeCloud } = req.body || {};
     if (typeof cloudOrg !== 'boolean') {
       return res.status(400).json({ error: 'cloudOrg must be a boolean' });
     }
+    if (purgeCloud !== undefined && typeof purgeCloud !== 'boolean') {
+      return res.status(400).json({ error: 'purgeCloud must be a boolean' });
+    }
     db.prepare('UPDATE devices SET cloud_org = ? WHERE id = ?').run(cloudOrg ? 1 : 0, req.device.id);
+    const deleted = cloudOrg === false && purgeCloud === true
+      ? purgeDeviceCloudData(db, req.device.id)
+      : undefined;
     const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(req.device.id);
-    return res.json(publicDevice(device));
+    return res.json({ ...publicDevice(device), ...(deleted !== undefined ? { deleted } : {}) });
   });
 
   // GET /api/devices/me — current device record (device token required).

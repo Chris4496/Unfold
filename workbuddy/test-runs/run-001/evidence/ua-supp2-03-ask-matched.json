@@ -1,0 +1,17 @@
+{
+  "found": true,
+  "text": "On 2026-10-03 the notes say: \"Sleep has been short and broken for several nights in a row.\"\n\nOn 2026-10-03 the notes say: \"Group project meeting felt tense because tasks were not divided fairly.\"",
+  "hits": [
+    {
+      "clientId": "supp-e3",
+      "dateLabel": "2026-10-03",
+      "quote": "Sleep has been short and broken for several nights in a row."
+    },
+    {
+      "clientId": "supp-e2",
+      "dateLabel": "2026-10-03",
+      "quote": "Group project meeting felt tense because tasks were not divided fairly."
+    }
+  ],
+  "genai": false
+}

@@ -12,6 +12,16 @@ import {
 } from '../components/Chips.jsx';
 
 /**
+ * Times a case was returned to the queue. The server increments
+ * claim_count both on every successful claim AND on every return
+ * (student rematch or sweeper timeout), so a queued/rematch case has an
+ * even claim_count and the return count is half of it.
+ */
+function rematchCount(claimCount) {
+  return Math.floor((claimCount || 0) / 2);
+}
+
+/**
  * Matched case queue. The server matches cases to this worker by language,
  * expertise ('general' matches everything) and remaining capacity.
  */
@@ -99,9 +109,9 @@ export default function Queue() {
                   <StatusChip status={c.status} />
                   <LanguageChip language={c.language} />
                   <WaitingBadge waitingHours={c.waitingHours} thresholdHours={72} />
-                  {c.claim_count > 0 && (
+                  {rematchCount(c.claim_count) > 0 && (
                     <span className="badge badge-amber" title="Previously claimed and returned to the queue">
-                      rematch ×{c.claim_count}
+                      rematch ×{rematchCount(c.claim_count)}
                     </span>
                   )}
                 </span>

@@ -67,8 +67,17 @@ function publicMessage(row) {
     sender: row.sender,
     text: row.text,
     created_at: row.created_at,
+    worker_name: row.worker_name ?? null,
   };
 }
+
+/** Messages with the sending worker's display name joined in (null for
+ * student messages and for worker messages predating sender_worker_id). */
+const MESSAGES_SELECT = `
+  SELECT m.*, w.name AS worker_name
+    FROM messages m
+    LEFT JOIN workers w ON w.id = m.sender_worker_id
+`;
 
 /** Latest message snippet for a case (140 chars max), or null. */
 function lastMessageSnippet(db, caseId) {
@@ -206,9 +215,13 @@ export function workerRouter(db, config) {
   });
 
   // GET /api/worker/cases/:id — full case detail, only if claimed by me.
+  // A withdrawn case is closed to workers and returns 404 case_not_found,
+  // even for the worker who claimed it (H6).
   router.get('/cases/:id', verified, (req, res) => {
     const row = db.prepare('SELECT * FROM cases WHERE id = ?').get(req.params.id);
-    if (!row) return res.status(404).json({ error: 'case_not_found' });
+    if (!row || row.status === 'withdrawn') {
+      return res.status(404).json({ error: 'case_not_found' });
+    }
     if (row.claimed_by !== req.worker.id) {
       return res.status(403).json({ error: 'not_your_case' });
     }
@@ -235,27 +248,30 @@ export function workerRouter(db, config) {
     const now = new Date().toISOString();
     const messageId = newId();
     db.prepare(
-      `INSERT INTO messages (id, case_id, sender, text, created_at)
-       VALUES (?, ?, 'worker', ?, ?)`
-    ).run(messageId, row.id, text.trim(), now);
+      `INSERT INTO messages (id, case_id, sender, sender_worker_id, text, created_at)
+       VALUES (?, ?, 'worker', ?, ?, ?)`
+    ).run(messageId, row.id, req.worker.id, text.trim(), now);
     db.prepare(
       `UPDATE cases SET status = 'replied', responded_at = ?, updated_at = ? WHERE id = ?`
     ).run(now, now, row.id);
 
-    const message = db.prepare('SELECT * FROM messages WHERE id = ?').get(messageId);
+    const message = db.prepare(`${MESSAGES_SELECT} WHERE m.id = ?`).get(messageId);
     const updated = db.prepare('SELECT * FROM cases WHERE id = ?').get(row.id);
     res.status(201).json({ message: publicMessage(message), case: publicCase(updated, { full: true }) });
   });
 
   // GET /api/worker/cases/:id/messages — full thread, only if claimed by me.
+  // Withdrawn cases return 404 case_not_found, even for the claimant (H6).
   router.get('/cases/:id/messages', verified, (req, res) => {
     const row = db.prepare('SELECT * FROM cases WHERE id = ?').get(req.params.id);
-    if (!row) return res.status(404).json({ error: 'case_not_found' });
+    if (!row || row.status === 'withdrawn') {
+      return res.status(404).json({ error: 'case_not_found' });
+    }
     if (row.claimed_by !== req.worker.id) {
       return res.status(403).json({ error: 'not_your_case' });
     }
     const messages = db
-      .prepare('SELECT * FROM messages WHERE case_id = ? ORDER BY created_at ASC, rowid ASC')
+      .prepare(`${MESSAGES_SELECT} WHERE m.case_id = ? ORDER BY m.created_at ASC, m.rowid ASC`)
       .all(row.id)
       .map(publicMessage);
     res.json({ messages });

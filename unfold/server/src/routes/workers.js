@@ -9,6 +9,16 @@ import {
 
 export const EXPERTISE_VALUES = ['academic', 'family', 'sleep', 'group', 'friends', 'general'];
 
+/** Allowed max_active range, aligned with the worker-web form (1–20). */
+const MAX_ACTIVE_MIN = 1;
+const MAX_ACTIVE_MAX = 20;
+const MAX_ACTIVE_DEFAULT = 5;
+const MAX_ACTIVE_ERROR = `max_active must be an integer between ${MAX_ACTIVE_MIN} and ${MAX_ACTIVE_MAX}`;
+
+function isValidMaxActive(value) {
+  return Number.isInteger(value) && value >= MAX_ACTIVE_MIN && value <= MAX_ACTIVE_MAX;
+}
+
 function publicWorker(w) {
   return {
     id: w.id,
@@ -38,13 +48,16 @@ export function workersRouter(db, config) {
   // Verification is an out-of-band admin action; unverified workers can log
   // in but cannot access case queue endpoints (requireVerifiedWorker).
   router.post('/register', (req, res) => {
-    const { email, password, name, organisation } = req.body || {};
+    const { email, password, name, organisation, max_active } = req.body || {};
     if (!isNonEmptyString(email) || !isNonEmptyString(password) || !isNonEmptyString(name)) {
       return res.status(400).json({ error: 'email, password and name are required' });
     }
     const normalizedEmail = String(email).trim().toLowerCase();
     if (password.length < 8) {
       return res.status(400).json({ error: 'password must be at least 8 characters' });
+    }
+    if (max_active !== undefined && !isValidMaxActive(max_active)) {
+      return res.status(400).json({ error: MAX_ACTIVE_ERROR });
     }
     const existing = db.prepare('SELECT id FROM workers WHERE email = ?').get(normalizedEmail);
     if (existing) return res.status(409).json({ error: 'email_already_registered' });
@@ -53,8 +66,16 @@ export function workersRouter(db, config) {
     const now = new Date().toISOString();
     db.prepare(
       `INSERT INTO workers (id, email, password_hash, name, organisation, expertise, languages, max_active, verified, created_at)
-       VALUES (?, ?, ?, ?, ?, '["general"]', '[]', 5, 0, ?)`
-    ).run(id, normalizedEmail, hashPassword(password), name.trim(), organisation ?? null, now);
+       VALUES (?, ?, ?, ?, ?, '["general"]', '[]', ?, 0, ?)`
+    ).run(
+      id,
+      normalizedEmail,
+      hashPassword(password),
+      name.trim(),
+      organisation ?? null,
+      max_active ?? MAX_ACTIVE_DEFAULT,
+      now
+    );
 
     const worker = db.prepare('SELECT * FROM workers WHERE id = ?').get(id);
     return res.status(201).json({ worker: publicWorker(worker) });
@@ -104,8 +125,8 @@ export function workersRouter(db, config) {
       params.push(JSON.stringify(languages));
     }
     if (max_active !== undefined) {
-      if (!Number.isInteger(max_active) || max_active < 1 || max_active > 100) {
-        return res.status(400).json({ error: 'max_active must be an integer between 1 and 100' });
+      if (!isValidMaxActive(max_active)) {
+        return res.status(400).json({ error: MAX_ACTIVE_ERROR });
       }
       updates.push('max_active = ?');
       params.push(max_active);

@@ -51,7 +51,13 @@ Original transcripts/audio never sync.
   `excerpts` (JSON, deidentified only), `topics` (JSON), `language`,
   `status TEXT CHECK IN ('queued','claimed','replied','continued','rematch','withdrawn')`,
   `claim_count INTEGER default 0`, `claimed_by`, `created_at`, `claimed_at`, `responded_at`, `updated_at`.
-- **messages** — `id pk`, `case_id`, `sender TEXT CHECK IN ('worker','student')`, `text`, `created_at`.
+- **messages** — `id pk`, `case_id`, `sender TEXT CHECK IN ('worker','student')`,
+  `sender_worker_id TEXT REFERENCES workers(id)` (nullable; set when `sender = 'worker'`,
+  `NULL` for student messages and messages written before the column existed),
+  `text`, `created_at`.
+
+Older databases are migrated in place: `createDb` runs a guarded
+`ALTER TABLE messages ADD COLUMN sender_worker_id` only when the column is missing.
 
 All timestamps are ISO-8601 UTC strings. `genai` columns: `1` = produced by the GenAI model,
 `0` = deterministic local fallback (UIs must disclose "not GenAI").
@@ -74,14 +80,16 @@ Statuses: `queued | claimed | replied | continued | rematch | withdrawn`.
 - `GET /api/health` → `{ ok, genai: { configured, model, baseUrl }, timeouts: { unclaimedHours, responseHours } }`.
 
 ### Workers
-- `POST /api/workers/register` — body `{ email, password (>=8 chars), name, organisation? }`.
+- `POST /api/workers/register` — body `{ email, password (>=8 chars), name, organisation?,
+  max_active? (int 1–20, default 5) }`.
   Creates an **unverified** worker (`verified = 0`). `409 email_already_registered` on duplicate.
   → `201 { worker }`.
 - `POST /api/workers/login` — body `{ email, password }` → `{ token, worker }`.
   `401 invalid_credentials`.
 - `GET /api/workers/me` (worker JWT) → `{ worker }`.
 - `PATCH /api/workers/me` (worker JWT) — body may include `expertise` (array of the enum
-  above), `languages` (string array), `max_active` (int 1–100) → `{ worker }`.
+  above), `languages` (string array), `max_active` (int 1–20, aligned with the worker-web
+  form) → `{ worker }`.
 
 Worker object: `{ id, email, name, organisation, expertise[], languages[], max_active, verified, created_at }`
 (never includes `password_hash`).
@@ -93,8 +101,13 @@ Middleware for later steps: `requireWorker` (valid JWT), `requireVerifiedWorker`
 - `POST /api/devices/register` — body `{ installId (>= 8 chars) }`. **Idempotent**: the same
   installId always returns the same `{ deviceId, token, cloudOrg, created_at }`.
   `201` on first registration, `200` on repeat.
-- `PUT /api/devices/me/consent` (device token) — body `{ cloudOrg: boolean }`. The independent
-  cloud-organisation authorisation; toggling it never affects anything else. → `{ deviceId, cloudOrg, created_at }`.
+- `PUT /api/devices/me/consent` (device token) — body `{ cloudOrg: boolean, purgeCloud?: boolean }`.
+  The independent cloud-organisation authorisation. `purgeCloud` only takes effect together
+  with `cloudOrg: false`: the device then **withdraws and purges** — all of its synced cloud
+  data is deleted exactly as `DELETE /api/entries` (entries, links, summary cache, background
+  analysis; **never cases**), and the response includes `deleted: n`. `purgeCloud` with
+  `cloudOrg: true` is contradictory and ignored; a non-boolean `purgeCloud` is `400`.
+  → `{ deviceId, cloudOrg, created_at }` (plus `deleted` when a purge ran).
 - `GET /api/devices/me` (device token) → `{ deviceId, cloudOrg, created_at }`.
 
 ## Seed
@@ -124,12 +137,17 @@ get `403 { "error": "not_verified" }` on every route except `GET /api/worker/me`
   `lastMessage` snippet (`{ sender, text (≤140 chars + …), created_at }` or `null`).
 - `GET /api/worker/cases/:id` → `{ case }` full detail (`main_concerns`, `recent_change`,
   `period`, `excerpts[]`, `topics[]`, `language`, timestamps) only if `claimed_by = me`,
-  else `403 not_your_case` / `404 case_not_found`.
+  else `403 not_your_case` / `404 case_not_found`. **A withdrawn case is closed to workers:
+  it returns `404 case_not_found` even to the worker who claimed it.**
 - `POST /api/worker/cases/:id/respond` — body `{ text }`, only if `claimed_by = me` and
-  `status IN ('claimed','continued')`. Inserts a `worker` message, sets `status = 'replied'`,
-  `responded_at`. → `201 { message, case }`. Errors: `400` missing text, `403 not_your_case`,
-  `404 case_not_found`, `409 invalid_status`.
-- `GET /api/worker/cases/:id/messages` → `{ messages }` (ASC) only if `claimed_by = me`.
+  `status IN ('claimed','continued')`. Inserts a `worker` message (recording the sender in
+  `sender_worker_id`), sets `status = 'replied'`, `responded_at`. → `201 { message, case }`.
+  Errors: `400` missing text, `403 not_your_case`, `404 case_not_found`, `409 invalid_status`
+  (a withdrawn case claimed by the requesting worker gets `409 invalid_status` here).
+- `GET /api/worker/cases/:id/messages` → `{ messages }` (ASC) only if `claimed_by = me`;
+  withdrawn cases return `404 case_not_found` even to the claimant. Each message includes
+  `worker_name` (the sending worker's display name, joined via `sender_worker_id`; `null`
+  for student messages and worker messages written before `sender_worker_id` existed).
 
 The sweeper (`startSweeper`, wired in `src/index.js` on boot) enforces the no-response
 timeout: a `claimed` case without response older than `RESPONSE_TIMEOUT_HOURS` becomes
@@ -150,10 +168,20 @@ foreign ids).
 - `POST /api/entries/sync` — body `{ entries: [{ clientId, createdAt, eventAt?, deidentified, tokens[] }] }`
   (max 200 per call). `403 cloud_org_not_enabled` when the device's cloud-organisation
   consent is off. Upserts by `(device_id, clientId)`; unchanged entries are returned as-is.
-  New/changed entries are classified server-side (`classifyEntry`), then the device's
-  recent 50 entries are re-linked (`linkEntries`), the background support analysis row is
-  regenerated (`analyseBackground`), and cached summaries for the affected days are dropped.
+  An explicit `eventAt` **updates** an existing record's `event_at`; when `eventAt` is
+  omitted, existing records keep their stored `event_at` (new records default it to
+  `createdAt`). New/changed entries are classified server-side (`classifyEntry`), then the
+  device's recent 50 entries are re-linked (`linkEntries`), the background support analysis
+  row is regenerated (`analyseBackground`), and cached summaries for the affected days are
+  dropped — when an entry's `event_at` moves it to a different day, **both** the old and the
+  new day's caches are invalidated.
   → `{ results: [{ clientId, topics, attributes, uncertainty, genai }] }`.
+- `DELETE /api/entries` — delete **all** of the device's synced entries plus derived cloud
+  data (links, daily-summary cache, background analysis). **Cases and their messages are
+  NOT deleted** (see "Cloud-data deletion lifecycle" below). → `200 { deleted: n }`.
+- `DELETE /api/entries/:clientId` — delete one synced entry. Links referencing it and the
+  cached summary of its day are removed as well; the background analysis row is left as-is
+  and regenerated on the next sync. → `200 { deleted: 1 }` or `404 { "error": "entry_not_found" }`.
 - `GET /api/entries` → `{ entries, links }`: all synced entries (ASC) plus cross-record
   links (`fromClientId`, `toClientId`, `relation`, `note`, `createdAt`).
 - `GET /api/summaries/:day` (`YYYY-MM-DD`) → cached summary or a fresh `dailySummary` call
@@ -180,11 +208,31 @@ foreign ids).
   the queue — `status = 'queued'`, `claimed_by`/`claimed_at`/`responded_at` cleared,
   `claim_count++`. → `{ id, status }`.
   All three transitions return `400 invalid_transition` (with current `status`) from other states.
-- `GET /api/cases/:id/messages` → `{ messages: [{ id, sender, text, createdAt }] }` (ASC).
-- `POST /api/cases/:id/messages` — body `{ text }` (≤1000 chars), sender `student`;
-  `400` on empty text or a withdrawn case. → `201 { message }`.
+- `GET /api/cases/:id/messages` → `{ messages: [{ id, sender, text, createdAt, workerName }] }`
+  (ASC); `workerName` is the sending worker's display name (`null` for student messages and
+  for worker messages written before `sender_worker_id` existed).
+- `POST /api/cases/:id/messages` — body `{ text }` (stored truncated to ≤500 chars, aligned
+  with the client), sender `student`; `400` on empty text or a withdrawn case. → `201 { message }`.
+
+## Cloud-data deletion lifecycle
+
+Three entry points, one behaviour — delete every entry-scoped cloud row for the
+device (`entries`, `links`, `summaries` cache, `analyses`), in one transaction:
+
+- `DELETE /api/entries` (whole device scope) → `200 { deleted: n }`;
+- `DELETE /api/entries/:clientId` (single record, plus its links and day-summary cache)
+  → `200 { deleted: 1 }` / `404 entry_not_found`;
+- `PUT /api/devices/me/consent { cloudOrg: false, purgeCloud: true }` → same full purge,
+  response includes `deleted: n`.
+
+**Cases are explicitly out of scope.** Deidentified excerpts already shared with the cloud
+organisation inside a case (`cases.excerpts`) and the case conversation (`messages`) are
+NOT deleted by any of the routes above. The lifecycle of excerpts/messages in already
+shared cases (e.g. whether withdrawing consent should also close or purge open cases) is a
+separate product decision, still pending — current behaviour keeps them untouched.
 
 ## Planned (later steps, not implemented here)
 
 None on the server: auth/consent, worker queue, GenAI features and student routes are all
 implemented. Remaining work is client-side (Expo app + worker-web) against this contract.
+The lifecycle of case excerpts after consent withdrawal is undecided (see above).

@@ -354,6 +354,64 @@ test('respond allowed again when status becomes continued (student replied)', as
   assert.equal(getCase(caseId).status, 'replied');
 });
 
+// --- Withdrawn cases (H6) --------------------------------------------------
+
+test('withdrawn case: detail and messages return 404 case_not_found, respond returns 409 invalid_status', async () => {
+  const w = insertWorker({});
+  const caseId = insertCase({ status: 'withdrawn', claimedBy: w.id, claimedAt: hoursAgo(2) });
+
+  // Even the worker who claimed the case loses read access after withdraw.
+  const detail = await api(`/api/worker/cases/${caseId}`, { token: w.token });
+  assert.equal(detail.status, 404);
+  assert.equal(detail.body.error, 'case_not_found');
+
+  const msgs = await api(`/api/worker/cases/${caseId}/messages`, { token: w.token });
+  assert.equal(msgs.status, 404);
+  assert.equal(msgs.body.error, 'case_not_found');
+
+  // Write routes already reject withdrawn cases with 409 invalid_status.
+  const respond = await api(`/api/worker/cases/${caseId}/respond`, {
+    method: 'POST',
+    body: { text: 'are you still there?' },
+    token: w.token,
+  });
+  assert.equal(respond.status, 409);
+  assert.equal(respond.body.error, 'invalid_status');
+});
+
+// --- Worker identity on messages -------------------------------------------
+
+test('respond stores sender_worker_id and messages expose worker_name', async () => {
+  const w = insertWorker({});
+  const caseId = insertCase({ status: 'claimed', claimedBy: w.id, claimedAt: hoursAgo(0.5) });
+  db.prepare('INSERT INTO messages (id, case_id, sender, text, created_at) VALUES (?, ?, ?, ?, ?)').run(
+    newId(),
+    caseId,
+    'student',
+    'a student note',
+    hoursAgo(0.3)
+  );
+
+  const res = await api(`/api/worker/cases/${caseId}/respond`, {
+    method: 'POST',
+    body: { text: 'worker reply' },
+    token: w.token,
+  });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.message.worker_name, 'W');
+
+  const stored = db
+    .prepare('SELECT sender_worker_id FROM messages WHERE id = ?')
+    .get(res.body.message.id);
+  assert.equal(stored.sender_worker_id, w.id);
+
+  const msgs = await api(`/api/worker/cases/${caseId}/messages`, { token: w.token });
+  assert.equal(msgs.status, 200);
+  const bySender = Object.fromEntries(msgs.body.messages.map((m) => [m.sender, m]));
+  assert.equal(bySender.worker.worker_name, 'W');
+  assert.equal(bySender.student.worker_name, null);
+});
+
 // --- Sweeper auto-rematch integration --------------------------------------
 
 test('sweeper auto-rematch returns a stale claimed case to the queue for another worker', async () => {

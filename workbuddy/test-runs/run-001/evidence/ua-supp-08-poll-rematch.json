@@ -1,0 +1,32 @@
+[
+  {
+    "poll": 1,
+    "elapsed_s": 35,
+    "status": "claimed",
+    "claimCount": 1
+  },
+  {
+    "poll": 2,
+    "elapsed_s": 55,
+    "status": "claimed",
+    "claimCount": 1
+  },
+  {
+    "poll": 3,
+    "elapsed_s": 75,
+    "status": "claimed",
+    "claimCount": 1
+  },
+  {
+    "poll": 4,
+    "elapsed_s": 95,
+    "status": "claimed",
+    "claimCount": 1
+  },
+  {
+    "poll": 5,
+    "elapsed_s": 115,
+    "status": "rematch",
+    "claimCount": 2
+  }
+]

@@ -35,7 +35,7 @@ export class ApiError extends Error {
 }
 
 type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PUT' | 'PATCH';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   token?: string | null;
   body?: unknown;
 };
@@ -128,7 +128,7 @@ export type ActiveCase = {
   messages: number;
 };
 
-export type CaseMessage = { id: string; sender: 'worker' | 'student'; text: string; createdAt: string };
+export type CaseMessage = { id: string; sender: 'worker' | 'student'; text: string; createdAt: string; workerName?: string | null };
 
 // ---------------------------------------------------------------------------
 // Raw endpoints
@@ -138,12 +138,30 @@ export function registerDevice(installId: string): Promise<DeviceRegistration> {
   return request<DeviceRegistration>('/api/devices/register', { method: 'POST', body: { installId } });
 }
 
-export function setCloudConsent(token: string, cloudOrg: boolean): Promise<ConsentResult> {
-  return request<ConsentResult>('/api/devices/me/consent', { method: 'PUT', token, body: { cloudOrg } });
+export function setCloudConsent(
+  token: string,
+  cloudOrg: boolean,
+  options?: { purgeCloud?: boolean },
+): Promise<ConsentResult> {
+  return request<ConsentResult>('/api/devices/me/consent', {
+    method: 'PUT',
+    token,
+    body: { cloudOrg, ...(options?.purgeCloud ? { purgeCloud: true } : {}) },
+  });
 }
 
 export function syncEntries(token: string, entries: SyncEntryInput[]): Promise<{ results: SyncResult[] }> {
   return request<{ results: SyncResult[] }>('/api/entries/sync', { method: 'POST', token, body: { entries } });
+}
+
+/** Delete every synced entry for this device (paired with "Delete everything"). */
+export function deleteCloudEntries(token: string): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>('/api/entries', { method: 'DELETE', token });
+}
+
+/** Delete one synced entry by its client id (paired with deleting a note). */
+export function deleteCloudEntry(token: string, clientId: string): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>(`/api/entries/${encodeURIComponent(clientId)}`, { method: 'DELETE', token });
 }
 
 export function getDaySummary(token: string, day: string): Promise<DaySummaryResult> {
