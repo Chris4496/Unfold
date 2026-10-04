@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Unfold backend: multi-party social worker support system (Express + SQLite, server-side Moonshot Kimi GenAI)",
+  "description": "Unfold backend: multi-party social worker support system (Express + SQLite, server-side Gemini GenAI)",
   "engines": {
     "node": ">=20"
   },

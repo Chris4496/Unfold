@@ -31,7 +31,9 @@ Observed health response (no key in env):
 ```
 
 Note: `configured:false` only signals the key is absent — the key value is
-never exposed by any endpoint.
+never exposed by any endpoint. This snapshot is from 2026-10-03, when the
+server still defaulted to Moonshot `kimi-k3`. The live server now reports
+the Gemini base URL and `gemini-3.8-flash`.
 
 ## 2. Full real flow via curl (fallback path, no Moonshot key)
 
@@ -127,17 +129,18 @@ All flags surface to the clients so UIs can label output as "server rules —
 not AI" / "On-device" (student app) as implemented in `src/api.ts`
 (`source:'cloud'|'device'` + `genai`).
 
-## Setting MOONSHOT_API_KEY
+## Setting GEMINI_API_KEY
 
 1. `cp unfold/server/.env.example unfold/server/.env`
-2. Set `MOONSHOT_API_KEY=sk-…` in `unfold/server/.env` (or export it in the
-   shell before starting the server).
+2. Set `GEMINI_API_KEY=…` in `unfold/server/.env` (or export it in the
+   shell before starting the server). Create the key in Google AI Studio.
 3. Restart the server. Verify with
    `curl -s http://localhost:8787/api/health` → `"configured":true`.
-4. All GenAI features then call `https://api.moonshot.ai/v1` model `kimi-k3`
-   server-side and return `genai:true`. If a call fails or returns an invalid
-   shape, the server automatically falls back to the deterministic path and
-   still flags `genai:false` — clients never break.
+4. All GenAI features then call
+   `https://generativelanguage.googleapis.com/v1beta/openai` model
+   `gemini-3.8-flash` server-side and return `genai:true`. If a call fails
+   or returns an invalid shape, the server automatically falls back to the
+   deterministic path and still flags `genai:false` — clients never break.
 5. The key must **never** be placed in the Expo app or worker-web; there is
    no client code path that reads it.
 
@@ -146,7 +149,7 @@ not AI" / "On-device" (student app) as implemented in `src/api.ts`
 - **Fallback ask is exact-word matching.** "When did I have trouble
   *sleeping*?" does not match a note containing "*sleep*" (no stemming).
   This is a faithful port of the on-device heuristic (`unfold/src/lib/ask.ts`),
-  so server and device fallbacks agree. With a Moonshot key the GenAI path
+  so server and device fallbacks agree. With a Gemini key the GenAI path
   handles inflections/semantics.
 - **Fallback linking is very conservative** (needs ≥2 shared >4-char words on
   different days). The two test entries ("sleep/exam" vs "family/grades")

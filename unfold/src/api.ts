@@ -9,7 +9,7 @@ import type { AttributeId, CaseStatus, Draft, Entry, TokenKind, TopicId } from '
  * Data boundary: only DEIDENTIFIED text is ever sent, and only when the
  * student has explicitly enabled the independent cloud-organisation consent.
  * Original transcripts and audio never leave the device. No API key is
- * bundled here — every GenAI call happens server-side (Moonshot kimi-k3,
+ * bundled here — every GenAI call happens server-side (Gemini,
  * key from the server environment only).
  *
  * Every GenAI feature has a deterministic local fallback: the *WithFallback

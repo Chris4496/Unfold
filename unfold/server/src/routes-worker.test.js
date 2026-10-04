@@ -18,9 +18,9 @@ let db;
 
 const testConfig = {
   jwtSecret: 'test-secret',
-  moonshotApiKey: '',
-  moonshotBaseUrl: 'https://api.moonshot.ai/v1',
-  genaiModel: 'kimi-k3',
+  geminiApiKey: '',
+  geminiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  genaiModel: 'gemini-3.8-flash',
   unclaimedTimeoutHours: 72,
   responseTimeoutHours: 48,
 };

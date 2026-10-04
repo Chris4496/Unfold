@@ -1,8 +1,8 @@
 # Unfold Server Contract
 
 Backend for the Unfold multi-party support system: Express 4 + better-sqlite3 (ESM, Node >= 20).
-All GenAI calls are made **server-side only** against `https://api.moonshot.ai/v1` (model
-`kimi-k3` by default) using `MOONSHOT_API_KEY` from the server environment. The key is never
+All GenAI calls are made **server-side only** against `https://generativelanguage.googleapis.com/v1beta/openai` (model
+`gemini-3.8-flash` by default) using `GEMINI_API_KEY` from the server environment. The key is never
 bundled into the Expo client or worker-web. Every GenAI feature has a deterministic local
 fallback and marks its output with `genai = 0` when the fallback was used.
 
@@ -24,9 +24,9 @@ Original transcripts/audio never sync.
 | `PORT` | `8787` | Listen port |
 | `DB_PATH` | `./unfold.db` | SQLite file |
 | `JWT_SECRET` | dev value | Worker JWT signing secret (change in production) |
-| `MOONSHOT_API_KEY` | _empty_ | Server-side Moonshot key; empty ⇒ deterministic fallbacks |
-| `MOONSHOT_BASE_URL` | `https://api.moonshot.ai/v1` | OpenAI-compatible base URL |
-| `GENAI_MODEL` | `kimi-k3` | Model for all GenAI features |
+| `GEMINI_API_KEY` | _empty_ | Server-side Gemini key; empty ⇒ deterministic fallbacks |
+| `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai` | OpenAI-compatible base URL |
+| `GENAI_MODEL` | `gemini-3.8-flash` | Model for all GenAI features |
 | `UNCLAIMED_TIMEOUT_HOURS` | `72` | Queued/rematch unclaimed threshold for the "waiting" flag |
 | `RESPONSE_TIMEOUT_HOURS` | `48` | Claimed-without-response threshold for auto-rematch |
 

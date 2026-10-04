@@ -1,7 +1,7 @@
 // Server-side GenAI integration for Unfold.
 //
-// All LLM calls go to the Moonshot Kimi API (OpenAI-compatible chat completions)
-// using the MOONSHOT_API_KEY from this server's environment only. The key must
+// All LLM calls go to the Gemini API (OpenAI-compatible chat completions)
+// using the GEMINI_API_KEY from this server's environment only. The key must
 // never be bundled into the Expo client or the worker-web frontend.
 //
 // Every exported function returns one of:
@@ -21,9 +21,9 @@
 
 function getConfig() {
   return {
-    apiKey: process.env.MOONSHOT_API_KEY || '',
-    baseUrl: (process.env.MOONSHOT_BASE_URL || 'https://api.moonshot.ai/v1').replace(/\/+$/, ''),
-    model: process.env.GENAI_MODEL || 'kimi-k3',
+    apiKey: process.env.GEMINI_API_KEY || '',
+    baseUrl: (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai').replace(/\/+$/, ''),
+    model: process.env.GENAI_MODEL || 'gemini-3.8-flash',
     timeoutMs: Number(process.env.GENAI_TIMEOUT_MS || 15000),
   };
 }
@@ -67,7 +67,7 @@ function extractJson(content) {
 async function chatJson({ system, user, maxTokens = 4096 }) {
   const { apiKey, baseUrl, model, timeoutMs } = getConfig();
   if (!apiKey) {
-    throw new GenaiUnavailable('no-api-key', 'MOONSHOT_API_KEY is not set on the server');
+    throw new GenaiUnavailable('no-api-key', 'GEMINI_API_KEY is not set on the server');
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -81,8 +81,10 @@ async function chatJson({ system, user, maxTokens = 4096 }) {
       },
       body: JSON.stringify({
         model,
-        // kimi-k3 currently accepts only temperature=1; omit the field so the
-        // provider default applies instead of hard-failing with HTTP 400.
+        // Gemini 3 thinks by default. Keep reasoning low so short JSON tasks
+        // finish inside the request timeout. Temperature is omitted so the
+        // provider default applies.
+        reasoning_effort: 'low',
         response_format: { type: 'json_object' },
         max_tokens: maxTokens,
         messages: [
@@ -92,20 +94,20 @@ async function chatJson({ system, user, maxTokens = 4096 }) {
       }),
     });
     if (!response.ok) {
-      throw new GenaiUnavailable('http-error', `Moonshot API responded with status ${response.status}`);
+      throw new GenaiUnavailable('http-error', `Gemini API responded with status ${response.status}`);
     }
     const payload = await response.json();
     const content = payload?.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || content.trim() === '') {
-      throw new GenaiUnavailable('bad-response', 'Moonshot API response had no message content');
+      throw new GenaiUnavailable('bad-response', 'Gemini API response had no message content');
     }
     return extractJson(content);
   } catch (err) {
     if (err instanceof GenaiUnavailable) throw err;
     if (err && err.name === 'AbortError') {
-      throw new GenaiUnavailable('timeout', `Moonshot API request timed out after ${timeoutMs}ms`);
+      throw new GenaiUnavailable('timeout', `Gemini API request timed out after ${timeoutMs}ms`);
     }
-    throw new GenaiUnavailable('request-failed', `Moonshot API request failed: ${err?.message ?? err}`);
+    throw new GenaiUnavailable('request-failed', `Gemini API request failed: ${err?.message ?? err}`);
   } finally {
     clearTimeout(timer);
   }

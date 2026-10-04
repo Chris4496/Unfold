@@ -9,12 +9,12 @@ import { newId } from './auth.js';
  * Tests for the student-facing routes (src/routes-student.js).
  *
  * All tests run against a real Express app on an ephemeral port with an
- * in-memory database. MOONSHOT_API_KEY is cleared so every GenAI feature
+ * in-memory database. GEMINI_API_KEY is cleared so every GenAI feature
  * exercises its deterministic local fallback (genai = false).
  */
 
 // Force the deterministic fallback path regardless of the shell environment.
-process.env.MOONSHOT_API_KEY = '';
+process.env.GEMINI_API_KEY = '';
 
 let server;
 let baseUrl;
@@ -22,9 +22,9 @@ let db;
 
 const testConfig = {
   jwtSecret: 'test-secret',
-  moonshotApiKey: '',
-  moonshotBaseUrl: 'https://api.moonshot.ai/v1',
-  genaiModel: 'kimi-k3',
+  geminiApiKey: '',
+  geminiBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  genaiModel: 'gemini-3.8-flash',
   unclaimedTimeoutHours: 72,
   responseTimeoutHours: 48,
 };

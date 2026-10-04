@@ -12,7 +12,7 @@ import { startSweeper } from './sweeper.js';
  * Express app factory. Exported separately from the listener so tests can
  * build an app against an in-memory database.
  *
- * All GenAI calls happen server-side (see src/genai.js) using the Moonshot
+ * All GenAI calls happen server-side (see src/genai.js) using the Gemini
  * key from the server environment only; nothing here ever ships a key to a
  * client.
  */
@@ -25,9 +25,9 @@ export function createApp({ db, config = defaultConfig } = {}) {
     res.json({
       ok: true,
       genai: {
-        configured: !!config.moonshotApiKey,
+        configured: !!config.geminiApiKey,
         model: config.genaiModel,
-        baseUrl: config.moonshotBaseUrl,
+        baseUrl: config.geminiBaseUrl,
       },
       timeouts: {
         unclaimedHours: config.unclaimedTimeoutHours,
@@ -64,7 +64,7 @@ if (isMain) {
   app.listen(defaultConfig.port, () => {
     console.log(`[server] Unfold backend listening on http://localhost:${defaultConfig.port}`);
     console.log(
-      `[server] GenAI: ${defaultConfig.moonshotApiKey ? `configured (model ${defaultConfig.genaiModel})` : 'NOT configured — deterministic local fallbacks will be used (genai=0)'}`
+      `[server] GenAI: ${defaultConfig.geminiApiKey ? `configured (model ${defaultConfig.genaiModel})` : 'NOT configured — deterministic local fallbacks will be used (genai=0)'}`
     );
   });
 }

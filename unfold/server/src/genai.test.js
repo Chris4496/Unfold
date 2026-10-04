@@ -1,5 +1,5 @@
 // Unit tests for src/genai.js (node:test). All network access is mocked by
-// replacing globalThis.fetch, so no real Moonshot API key or network is needed.
+// replacing globalThis.fetch, so no real Gemini API key or network is needed.
 import { afterEach, beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -18,7 +18,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const originalFetch = globalThis.fetch;
-const ENV_KEYS = ['MOONSHOT_API_KEY', 'MOONSHOT_BASE_URL', 'GENAI_MODEL', 'GENAI_TIMEOUT_MS'];
+const ENV_KEYS = ['GEMINI_API_KEY', 'GEMINI_BASE_URL', 'GENAI_MODEL', 'GENAI_TIMEOUT_MS'];
 const savedEnv = {};
 
 let fetchCalls;
@@ -53,7 +53,7 @@ function mockFetchResponding(content, { status = 200 } = {}) {
 }
 
 function setKey() {
-  process.env.MOONSHOT_API_KEY = 'test-key';
+  process.env.GEMINI_API_KEY = 'test-key';
 }
 
 // ---------------------------------------------------------------------------
@@ -75,16 +75,17 @@ describe('classifyEntry', () => {
     assert.deepEqual(result.attributes, ['feeling', 'event']);
     assert.equal(result.eventTimeHint, 'last night');
     assert.deepEqual(result.uncertainty, ['whether the deadline passed']);
-    // Verify request shape: OpenAI-compatible, JSON mode, model.
-    // kimi-k3 accepts only temperature=1, so the client omits the field.
+    // Verify request shape: OpenAI-compatible Gemini endpoint, JSON mode, model.
+    // Temperature is omitted so the provider default applies.
     assert.equal(fetchCalls.length, 1);
     const { url, options } = fetchCalls[0];
-    assert.equal(url, 'https://api.moonshot.ai/v1/chat/completions');
+    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
     assert.equal(options.method, 'POST');
     assert.equal(options.headers.Authorization, 'Bearer test-key');
     const body = JSON.parse(options.body);
-    assert.equal(body.model, 'kimi-k3');
+    assert.equal(body.model, 'gemini-3.8-flash');
     assert.equal(body.temperature, undefined);
+    assert.equal(body.reasoning_effort, 'low');
     assert.deepEqual(body.response_format, { type: 'json_object' });
   });
 

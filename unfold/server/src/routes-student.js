@@ -22,7 +22,7 @@ import {
  * cloud-organisation consent (cloud_org = 1). Original transcripts/audio
  * never leave the device.
  *
- * All GenAI calls happen server-side in src/genai.js (Moonshot Kimi, key from
+ * All GenAI calls happen server-side in src/genai.js (Gemini, key from
  * the server environment only). Every response carries a `genai` flag so the
  * UI can disclose when a deterministic local fallback was used instead.
  */

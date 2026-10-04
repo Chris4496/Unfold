@@ -28,7 +28,7 @@ A private voice diary for students. Record on your phone, then decide whether a 
 **Server (`unfold/server/`)**
 
 - Worker accounts, consent enforcement and case routing
-- All GenAI calls (Moonshot `kimi-k3`) made server-side; empty key falls back to deterministic rules
+- All GenAI calls (Gemini `gemini-3.8-flash`) made server-side; empty key falls back to deterministic rules
 - Cloud-data deletion lifecycle: per-entry delete, full purge on consent withdrawal
 - Background sweeper for stale data
 
@@ -48,7 +48,7 @@ A multi-agent skill that evaluates a software product by simulating full user jo
 ## Architecture
 
 - `unfold/` — the Expo client (iOS / Android / web, this app). Voice notes are recorded and stored on-device; only de-identified text ever syncs, and only after the separate cloud-organisation consent is switched on in Settings.
-- `unfold/server/` — the backend: Express 4 + better-sqlite3 (ESM, Node ≥ 20). It holds worker accounts and case routing, and makes every GenAI call server-side against Moonshot `kimi-k3` (`MOONSHOT_API_KEY` from the server environment only — never bundled into the client). An empty key falls back to deterministic rules. The full API contract is in `unfold/server/CONTRACT.md`.
+- `unfold/server/` — the backend: Express 4 + better-sqlite3 (ESM, Node ≥ 20). It holds worker accounts and case routing, and makes every GenAI call server-side against Gemini `gemini-3.8-flash` (`GEMINI_API_KEY` from the server environment only — never bundled into the client). An empty key falls back to deterministic rules. The full API contract is in `unfold/server/CONTRACT.md`.
 - `unfold/worker-web/` — the social-worker console: Vite + React. Workers register (unverified), log in, and — once verified — claim cases from a language/expertise-matched queue, read de-identified summaries and reply.
 - `workbuddy/` — the evaluation tooling: the software-journey-evaluator skill plus `test-runs/` evidence from past evaluation runs (not part of the product).
 
@@ -76,7 +76,7 @@ The server loads settings from `unfold/server/.env` (see `.env.example`):
 
 - `PORT` defaults to `8787`; `DB_PATH` defaults to `./unfold.db`.
 - `JWT_SECRET` must be replaced with a strong, private value outside local development; do not use the example value in production.
-- `MOONSHOT_API_KEY` is optional. If unset, GenAI features use deterministic fallbacks. Keep this key in the server `.env` only—never put it in the Expo app or worker console.
+- `GEMINI_API_KEY` is optional. If unset, GenAI features use deterministic fallbacks. Keep this key in the server `.env` only—never put it in the Expo app or worker console.
 
 For local testing, the seeded verified account is `demo.worker@unfold.local` / `demo1234`; the unverified account is `new.worker@unfold.local` / `demo1234`.
 
