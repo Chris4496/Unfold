@@ -30,6 +30,17 @@ test('reads text from a speech model result', () => {
   assert.equal(readTranscript({ text: '里面' }), '裏面');
 });
 
+test('reads text from an ElevenLabs Scribe result', () => {
+  assert.equal(
+    readTranscript({
+      language_code: 'yue',
+      text: '  我今日好攰，唔想做功課  ',
+      words: [{ text: '我' }, { text: '今日' }],
+    }),
+    '我今日好攰，唔想做功課',
+  );
+});
+
 test('keeps text the student already edited', () => {
   assert.equal(nextComposerText('my words', 'from the recording', true), 'my words');
   assert.equal(nextComposerText('preview', 'from the recording', false), 'from the recording');
