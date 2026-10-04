@@ -66,7 +66,13 @@ npm run seed   # creates demo worker accounts; safe to re-run
 npm run dev    # http://localhost:8787
 ```
 
-`MOONSHOT_API_KEY` is optional. Without it, GenAI features use deterministic fallbacks. For local testing, the seeded verified account is `demo.worker@unfold.local` / `demo1234`; the unverified account is `new.worker@unfold.local` / `demo1234`.
+The server loads settings from `unfold/server/.env` (see `.env.example`):
+
+- `PORT` defaults to `8787`; `DB_PATH` defaults to `./unfold.db`.
+- `JWT_SECRET` must be replaced with a strong, private value outside local development; do not use the example value in production.
+- `MOONSHOT_API_KEY` is optional. If unset, GenAI features use deterministic fallbacks. Keep this key in the server `.env` only—never put it in the Expo app or worker console.
+
+For local testing, the seeded verified account is `demo.worker@unfold.local` / `demo1234`; the unverified account is `new.worker@unfold.local` / `demo1234`.
 
 ### 2. Start the social-worker console
 
