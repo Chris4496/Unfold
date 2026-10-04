@@ -52,49 +52,61 @@ A multi-agent skill that evaluates a software product by simulating full user jo
 - `unfold/worker-web/` — the social-worker console: Vite + React. Workers register (unverified), log in, and — once verified — claim cases from a language/expertise-matched queue, read de-identified summaries and reply.
 - `workbuddy/` — the evaluation tooling: the software-journey-evaluator skill plus `test-runs/` evidence from past evaluation runs (not part of the product).
 
-## Running it
+## Run locally
 
-The client:
+Requires **Node.js 20 or newer**. Start the server, worker console and app in three separate terminals.
 
-```bash
-cd unfold
-npm install
-npm test
-npm run web
-```
-
-The server (port 8787 by default):
+### 1. Start the server
 
 ```bash
 cd unfold/server
 npm install
-npm run seed   # demo.worker@unfold.local / demo1234 (verified), new.worker@unfold.local / demo1234 (unverified)
-npm run dev
+cp .env.example .env
+npm run seed   # creates demo worker accounts; safe to re-run
+npm run dev    # http://localhost:8787
 ```
 
-The worker console:
+`MOONSHOT_API_KEY` is optional. Without it, GenAI features use deterministic fallbacks. For local testing, the seeded verified account is `demo.worker@unfold.local` / `demo1234`; the unverified account is `new.worker@unfold.local` / `demo1234`.
+
+### 2. Start the social-worker console
 
 ```bash
 cd unfold/worker-web
 npm install
-npm run dev
+npm run dev    # http://localhost:5173
 ```
 
-The client talks to the server at `EXPO_PUBLIC_API_URL` (default `http://localhost:8787`). Set it in `unfold/.env.local` when the server is not local.
+The console proxies API requests to the server at `http://localhost:8787`.
+
+### 3. Start the student app
+
+```bash
+cd unfold
+npm install
+cp .env.example .env.local
+```
+
+Edit `.env.local`:
+
+```dotenv
+EXPO_PUBLIC_API_URL=http://localhost:8787
+EXPO_PUBLIC_ELEVENLABS_API_KEY=your_key_here
+```
+
+The API URL defaults to `http://localhost:8787`. When using Expo Go on a physical phone, set it to your computer's LAN address instead (for example, `http://192.168.1.10:8787`). The ElevenLabs key is needed for voice transcription; get one from [ElevenLabs](https://elevenlabs.io/) for Scribe v2. Restart Expo after changing environment variables.
+
+Choose how to run the app:
+
+```bash
+npm start       # Expo development menu; choose a platform
+npm run web     # run in a browser
+npm run ios     # launch iOS simulator
+npm run android # launch Android emulator
+```
+
+Recordings are sent to ElevenLabs for transcription; audio and transcripts remain on-device. The ElevenLabs key is bundled into the development app, so use a restricted key with a low usage limit. Do not ship a public build with this setup; production transcription should go through a backend that keeps the key private.
 
 ## Tests
 
-- Client: `cd unfold && npm test` (tsx --test) — 28 unit tests covering de-identification (English + Chinese names, addresses, phones), classification, prompt rules, transcript handling and the server API client.
-- Server: `cd unfold/server && npm test` (node --test) — 89 tests covering auth, consent, entry sync, cloud-data purge, case withdrawal, GenAI fallbacks, the worker queue, case transitions and the sweeper.
-
-## Transcription key
-
-Voice notes are transcribed with [ElevenLabs Scribe v2](https://elevenlabs.io/docs/api-reference/speech-to-text/convert). Put your API key in `unfold/.env.local` (gitignored) before starting the dev server:
-
-```bash
-EXPO_PUBLIC_ELEVENLABS_API_KEY=sk_...
-```
-
-> **Known issue: the API key is exposed in the app.** Expo inlines every `EXPO_PUBLIC_*` variable into the JavaScript bundle. Anyone with a copy of the app or the web build can extract the key and spend the account's ElevenLabs credits. This is fine for local development and demos, but not for a public release. Before shipping, move the speech-to-text call behind a small backend that holds the key, and have the app send recordings there. Until then, use a key restricted to speech-to-text with a low usage limit, and rotate it if a build is shared.
-
-`npm start` opens the Expo dev server for Android, iOS, or web. Recordings are sent to ElevenLabs only to be transcribed; voice notes and transcripts are saved on the device. A short summary is prepared only if you ask, and it is shared only after you approve it.
+- Client: `cd unfold && npm test` — 29 tests covering de-identification, classification, prompt rules, transcription and the API client.
+- Server: `cd unfold/server && npm test` — 89 tests covering auth, consent, entry sync, cloud-data purge, case withdrawal, GenAI fallbacks, the worker queue and case transitions.
