@@ -54,7 +54,13 @@ A multi-agent skill that evaluates a software product by simulating full user jo
 
 ## Run locally
 
-Requires **Node.js 20 or newer**. Start the server, worker console and app in three separate terminals.
+Requires **Node.js 20 or newer**. To start the API server, worker console and student app together, run this from the repository root:
+
+```bash
+./start-all.sh
+```
+
+The script creates local env files if needed, seeds demo accounts, and starts all three services. Press Ctrl-C to stop them. Its default ports (8787, 5173 and 8081) must be free. For manual setup, use the steps below.
 
 ### 1. Start the server
 
