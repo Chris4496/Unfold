@@ -19,6 +19,9 @@ import { newId, requireWorker, requireVerifiedWorker } from './auth.js';
 /** Statuses that count against a worker's active-case capacity. */
 export const ACTIVE_STATUSES = ['claimed', 'replied', 'continued'];
 
+/** Max stored length of a worker message (the student side caps at 500). */
+const MAX_WORKER_MESSAGE_CHARS = 1000;
+
 /** Count of a worker's currently active cases (capacity bookkeeping). */
 export function activeCaseCount(db, workerId) {
   return db
@@ -229,8 +232,9 @@ export function workerRouter(db, config) {
   });
 
   // POST /api/worker/cases/:id/respond { text } — send a message to the
-  // student. Only while the case is 'claimed' or 'continued'; afterwards the
-  // status becomes 'replied' and responded_at is set.
+  // student. Text is stored truncated to MAX_WORKER_MESSAGE_CHARS. Only
+  // while the case is 'claimed' or 'continued'; afterwards the status
+  // becomes 'replied' and responded_at is set.
   router.post('/cases/:id/respond', verified, (req, res) => {
     const { text } = req.body || {};
     if (typeof text !== 'string' || text.trim().length === 0) {
@@ -250,7 +254,7 @@ export function workerRouter(db, config) {
     db.prepare(
       `INSERT INTO messages (id, case_id, sender, sender_worker_id, text, created_at)
        VALUES (?, ?, 'worker', ?, ?, ?)`
-    ).run(messageId, row.id, req.worker.id, text.trim(), now);
+    ).run(messageId, row.id, req.worker.id, text.trim().slice(0, MAX_WORKER_MESSAGE_CHARS), now);
     db.prepare(
       `UPDATE cases SET status = 'replied', responded_at = ?, updated_at = ? WHERE id = ?`
     ).run(now, now, row.id);

@@ -310,18 +310,23 @@ export function studentRouter(db, config = {}) {
 
   // -------------------------------------------------------------------------
   // DELETE /api/entries — remove ALL synced entries for this device plus
-  // derived artefacts (links, summary cache, background analysis). Cases and
-  // their messages are NOT affected (see CONTRACT.md). -> 200 { deleted: n }
+  // derived artefacts (links, summary cache, background analysis) AND the
+  // device's cases with their whole conversations (N1: shared case content
+  // is part of the purge, see CONTRACT.md).
+  // -> 200 { deleted: n, casesDeleted: m }
   // -------------------------------------------------------------------------
   router.delete('/entries', (req, res) => {
-    const deleted = purgeDeviceCloudData(db, req.device.id);
-    return res.json({ deleted });
+    const result = purgeDeviceCloudData(db, req.device.id);
+    return res.json(result);
   });
 
   // -------------------------------------------------------------------------
   // DELETE /api/entries/:clientId — remove one synced entry. Links that
-  // reference it and the cached summary of its day are cleaned up too; the
-  // background analysis is regenerated on the next sync.
+  // reference it, the cached summary of its day and the background analysis
+  // row are cleaned up too: the analysis is stale the moment an entry leaves
+  // (N2). Deleting it triggers NO GenAI call — the row is regenerated on the
+  // next sync, and clients fall back to the default/local analysis until
+  // then. Cases are device-scoped and stay untouched on this route.
   // -> 200 { deleted: 1 } | 404 { error: 'entry_not_found' }
   // -------------------------------------------------------------------------
   router.delete('/entries/:clientId', (req, res) => {
@@ -336,6 +341,7 @@ export function studentRouter(db, config = {}) {
         deviceId,
         dayOf(row.event_at || row.created_at)
       );
+      db.prepare('DELETE FROM analyses WHERE device_id = ?').run(deviceId);
       db.prepare('DELETE FROM entries WHERE device_id = ? AND client_id = ?').run(
         deviceId,
         req.params.clientId
@@ -501,16 +507,22 @@ export function studentRouter(db, config = {}) {
   });
 
   // POST /api/cases/:id/withdraw — student withdraws the request for support.
+  // The case row is kept (status 'withdrawn'; period/timestamps metadata
+  // retained) but its shared content is deleted in the same transaction (N1):
+  // excerpts are cleared and every message of the conversation is removed.
   router.post('/cases/:id/withdraw', (req, res) => {
     const row = ownedCase(req, res);
     if (!row) return;
     if (row.status === 'withdrawn') {
       return res.status(400).json({ error: 'invalid_transition', status: row.status });
     }
-    db.prepare(`UPDATE cases SET status = 'withdrawn', updated_at = ? WHERE id = ?`).run(
-      new Date().toISOString(),
-      row.id
-    );
+    const tx = db.transaction(() => {
+      db.prepare(
+        `UPDATE cases SET status = 'withdrawn', excerpts = '[]', updated_at = ? WHERE id = ?`
+      ).run(new Date().toISOString(), row.id);
+      db.prepare('DELETE FROM messages WHERE case_id = ?').run(row.id);
+    });
+    tx();
     return res.json({ id: row.id, status: 'withdrawn' });
   });
 

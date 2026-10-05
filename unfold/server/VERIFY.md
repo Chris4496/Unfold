@@ -63,7 +63,7 @@ the observed output.
 | 18 | student `GET /api/cases/:id/messages` | worker message visible |
 | 19 | student `continue` → worker respond again → student `withdraw` | `continued` → second respond **HTTP 201** → `withdrawn` |
 | 20 | student `GET /api/cases/active` | `{"case":null}` ✅ |
-| 21 | worker `GET /api/worker/cases/:id` after withdraw | still readable by the claimant, `status=withdrawn` — **⚠ superseded (defect H6, since fixed): withdrawn cases now return `404 case_not_found` to workers, even the claimant; `GET .../messages` behaves the same and `POST .../respond` returns `409 invalid_status`. See CONTRACT.md.** |
+| 21 | worker `GET /api/worker/cases/:id` after withdraw | still readable by the claimant, `status=withdrawn` — **⚠ superseded (defect H6, since fixed): withdrawn cases now return `404 case_not_found` to workers, even the claimant; `GET .../messages` behaves the same and `POST .../respond` returns `409 invalid_status`. See CONTRACT.md.** Also **⚠ updated (N1, since fixed): withdraw now deletes the shared case content in the same transaction — `excerpts` cleared to `[]` and all `messages` removed, while the case row is kept with `status=withdrawn`; the purge routes (`DELETE /api/entries`, consent `purgeCloud`) now delete the device's cases and messages as well and report `casesDeleted`. See CONTRACT.md, "Cloud-data deletion lifecycle".** |
 
 CORS verified from a web origin:
 `OPTIONS /api/worker/queue` with `Origin: http://localhost:4173` → `204` with

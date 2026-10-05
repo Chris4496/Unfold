@@ -58,8 +58,9 @@ export function devicesRouter(db) {
   //
   // Withdrawal with purge: { cloudOrg: false, purgeCloud: true } also
   // deletes ALL of the device's synced cloud data (entries, links, summary
-  // cache, background analysis) — same as DELETE /api/entries. Cases and
-  // their messages are NOT touched. The response then includes `deleted`.
+  // cache, background analysis, and the device's cases with their messages)
+  // — same as DELETE /api/entries. The response then includes `deleted`
+  // (entries count) and `casesDeleted`.
   router.put('/me/consent', requireDevice(db), (req, res) => {
     const { cloudOrg, purgeCloud } = req.body || {};
     if (typeof cloudOrg !== 'boolean') {
@@ -69,11 +70,11 @@ export function devicesRouter(db) {
       return res.status(400).json({ error: 'purgeCloud must be a boolean' });
     }
     db.prepare('UPDATE devices SET cloud_org = ? WHERE id = ?').run(cloudOrg ? 1 : 0, req.device.id);
-    const deleted = cloudOrg === false && purgeCloud === true
+    const purge = cloudOrg === false && purgeCloud === true
       ? purgeDeviceCloudData(db, req.device.id)
       : undefined;
     const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(req.device.id);
-    return res.json({ ...publicDevice(device), ...(deleted !== undefined ? { deleted } : {}) });
+    return res.json({ ...publicDevice(device), ...(purge ?? {}) });
   });
 
   // GET /api/devices/me — current device record (device token required).

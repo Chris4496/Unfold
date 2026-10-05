@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createApp } from './index.js';
 import { createDb } from './db.js';
 import { runSweeper } from './sweeper.js';
-import { newId } from './auth.js';
+import { newId, signWorkerToken } from './auth.js';
 
 /**
  * Tests for the student-facing routes (src/routes-student.js).
@@ -368,7 +368,7 @@ test('analysis returns a default shape before any sync', async () => {
 // Cloud-data deletion lifecycle
 // ---------------------------------------------------------------------------
 
-test('DELETE /api/entries removes all entries plus derived data, but never cases', async () => {
+test('DELETE /api/entries removes all entries, derived data, and the device\'s cases with messages', async () => {
   const token = await freshDevice();
   await syncSamples(token);
   const caseId = await createCase(token);
@@ -387,29 +387,44 @@ test('DELETE /api/entries removes all entries plus derived data, but never cases
   ).run(newId(), deviceId, byClient.e1, byClient.e2, new Date().toISOString());
   assert.ok(db.prepare('SELECT * FROM analyses WHERE device_id = ?').get(deviceId));
 
+  // A conversation on the shared case.
+  const msg = await api(`/api/cases/${caseId}/messages`, {
+    method: 'POST',
+    body: { text: 'a bit more context' },
+    token,
+  });
+  assert.equal(msg.status, 201);
+
   const res = await api('/api/entries', { method: 'DELETE', token });
   assert.equal(res.status, 200);
-  assert.equal(res.body.deleted, 3);
+  assert.equal(res.body.deleted, 3); // entries semantics unchanged
+  assert.equal(res.body.casesDeleted, 1); // additive field
 
-  for (const table of ['entries', 'links', 'summaries', 'analyses']) {
+  for (const table of ['entries', 'links', 'summaries', 'analyses', 'cases']) {
     assert.equal(
       db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE device_id = ?`).get(deviceId).n,
       0,
       `${table} must be empty after the purge`
     );
   }
+  // The case's conversation goes with it (N1: shared case content is purged).
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS n FROM messages WHERE case_id = ?').get(caseId).n,
+    0
+  );
 
-  // Cases and their messages are NOT part of the deletion lifecycle.
+  // No active case remains.
   const active = await api('/api/cases/active', { token });
-  assert.equal(active.body.case.id, caseId);
+  assert.equal(active.body.case, null);
 
   // Auth is required.
   assert.equal((await api('/api/entries', { method: 'DELETE' })).status, 401);
 });
 
-test('DELETE /api/entries/:clientId removes one entry, its links and its day summary cache', async () => {
+test('DELETE /api/entries/:clientId removes one entry, its links, its day summary cache and the stale analysis', async () => {
   const token = await freshDevice();
   await syncSamples(token);
+  const caseId = await createCase(token);
   const deviceId = deviceIdForToken(token);
 
   // Unknown clientId -> 404.
@@ -428,6 +443,9 @@ test('DELETE /api/entries/:clientId removes one entry, its links and its day sum
     `INSERT INTO links (id, device_id, from_entry_id, to_entry_id, relation, note, created_at)
      VALUES (?, ?, ?, ?, 'related', NULL, ?)`
   ).run(newId(), deviceId, byClient.e1, byClient.e2, new Date().toISOString());
+  // The sync produced a background analysis row; it goes stale the moment an
+  // entry is deleted (N2).
+  assert.ok(db.prepare('SELECT * FROM analyses WHERE device_id = ?').get(deviceId));
 
   const res = await api('/api/entries/e1', { method: 'DELETE', token });
   assert.equal(res.status, 200);
@@ -439,6 +457,27 @@ test('DELETE /api/entries/:clientId removes one entry, its links and its day sum
     db.prepare('SELECT COUNT(*) AS n FROM summaries WHERE device_id = ? AND day = ?').get(deviceId, '2025-01-06').n,
     0
   );
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS n FROM analyses WHERE device_id = ?').get(deviceId).n,
+    0,
+    'stale analysis row must be deleted (regenerated on the next sync)'
+  );
+
+  // No GenAI call is triggered and no stale evidence is served: the analysis
+  // endpoint falls back to its default shape until the next sync.
+  const analysis = await api('/api/analysis', { token });
+  assert.deepEqual(analysis.body, {
+    approaching: false,
+    explanation: null,
+    evidence: [],
+    genai: false,
+    updatedAt: null,
+  });
+
+  // Cases are device-scoped, not entry-scoped: the single-record route must
+  // leave them (and their messages) untouched.
+  const active = await api('/api/cases/active', { token });
+  assert.equal(active.body.case.id, caseId);
 });
 
 // ---------------------------------------------------------------------------
@@ -488,6 +527,63 @@ test('case lifecycle: create -> active -> withdraw', async () => {
 
   const after = await api('/api/cases/active', { token });
   assert.equal(after.body.case, null);
+});
+
+test('withdraw keeps the case row (metadata) but deletes excerpts and all messages (N1)', async () => {
+  const token = await freshDevice();
+  const id = await createCase(token);
+
+  // Claimed by a worker; conversation in both directions.
+  const workerId = insertWorker();
+  const now = new Date().toISOString();
+  db.prepare(
+    `UPDATE cases SET status = 'claimed', claimed_by = ?, claimed_at = ? WHERE id = ?`
+  ).run(workerId, now, id);
+  const posted = await api(`/api/cases/${id}/messages`, {
+    method: 'POST',
+    body: { text: 'a bit more context' },
+    token,
+  });
+  assert.equal(posted.status, 201);
+  db.prepare(
+    `INSERT INTO messages (id, case_id, sender, sender_worker_id, text, created_at)
+     VALUES (?, ?, 'worker', ?, 'worker reply', ?)`
+  ).run(newId(), id, workerId, now);
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS n FROM messages WHERE case_id = ?').get(id).n,
+    2
+  );
+
+  const res = await api(`/api/cases/${id}/withdraw`, { method: 'POST', token });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, { id, status: 'withdrawn' });
+
+  // The case row is retained with its metadata; the shared content is gone.
+  const row = db.prepare('SELECT * FROM cases WHERE id = ?').get(id);
+  assert.ok(row, 'case row must be retained after withdraw');
+  assert.equal(row.status, 'withdrawn');
+  assert.equal(row.period, CASE_BODY.period);
+  assert.equal(row.main_concerns, CASE_BODY.mainConcerns);
+  assert.equal(row.excerpts, '[]', 'shared excerpts must be cleared on withdraw');
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS n FROM messages WHERE case_id = ?').get(id).n,
+    0,
+    'withdraw must delete the whole conversation'
+  );
+
+  // Student read-models reflect the deletion.
+  assert.equal((await api('/api/cases/active', { token })).body.case, null);
+  const msgs = await api(`/api/cases/${id}/messages`, { token });
+  assert.deepEqual(msgs.body.messages, []);
+
+  // Worker side unchanged: the withdrawn case stays closed (404) even to the
+  // worker who claimed it.
+  const workerToken = signWorkerToken(workerId, testConfig.jwtSecret);
+  const detail = await api(`/api/worker/cases/${id}`, { token: workerToken });
+  assert.equal(detail.status, 404);
+  assert.equal(detail.body.error, 'case_not_found');
+  const workerMsgs = await api(`/api/worker/cases/${id}/messages`, { token: workerToken });
+  assert.equal(workerMsgs.status, 404);
 });
 
 test('rematch returns a claimed case to the queue (queued, claimed_by NULL, claim_count++)', async () => {

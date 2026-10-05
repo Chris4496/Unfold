@@ -105,9 +105,10 @@ Middleware for later steps: `requireWorker` (valid JWT), `requireVerifiedWorker`
   The independent cloud-organisation authorisation. `purgeCloud` only takes effect together
   with `cloudOrg: false`: the device then **withdraws and purges** — all of its synced cloud
   data is deleted exactly as `DELETE /api/entries` (entries, links, summary cache, background
-  analysis; **never cases**), and the response includes `deleted: n`. `purgeCloud` with
+  analysis, **and the device's cases with their messages**), and the response includes
+  `deleted: n` plus `casesDeleted: m`. `purgeCloud` with
   `cloudOrg: true` is contradictory and ignored; a non-boolean `purgeCloud` is `400`.
-  → `{ deviceId, cloudOrg, created_at }` (plus `deleted` when a purge ran).
+  → `{ deviceId, cloudOrg, created_at }` (plus `deleted`/`casesDeleted` when a purge ran).
 - `GET /api/devices/me` (device token) → `{ deviceId, cloudOrg, created_at }`.
 
 ## Seed
@@ -139,7 +140,8 @@ get `403 { "error": "not_verified" }` on every route except `GET /api/worker/me`
   `period`, `excerpts[]`, `topics[]`, `language`, timestamps) only if `claimed_by = me`,
   else `403 not_your_case` / `404 case_not_found`. **A withdrawn case is closed to workers:
   it returns `404 case_not_found` even to the worker who claimed it.**
-- `POST /api/worker/cases/:id/respond` — body `{ text }`, only if `claimed_by = me` and
+- `POST /api/worker/cases/:id/respond` — body `{ text }` (stored truncated to ≤1000 chars,
+  `MAX_WORKER_MESSAGE_CHARS`; the student side caps at 500), only if `claimed_by = me` and
   `status IN ('claimed','continued')`. Inserts a `worker` message (recording the sender in
   `sender_worker_id`), sets `status = 'replied'`, `responded_at`. → `201 { message, case }`.
   Errors: `400` missing text, `403 not_your_case`, `404 case_not_found`, `409 invalid_status`
@@ -177,11 +179,15 @@ foreign ids).
   new day's caches are invalidated.
   → `{ results: [{ clientId, topics, attributes, uncertainty, genai }] }`.
 - `DELETE /api/entries` — delete **all** of the device's synced entries plus derived cloud
-  data (links, daily-summary cache, background analysis). **Cases and their messages are
-  NOT deleted** (see "Cloud-data deletion lifecycle" below). → `200 { deleted: n }`.
-- `DELETE /api/entries/:clientId` — delete one synced entry. Links referencing it and the
-  cached summary of its day are removed as well; the background analysis row is left as-is
-  and regenerated on the next sync. → `200 { deleted: 1 }` or `404 { "error": "entry_not_found" }`.
+  data (links, daily-summary cache, background analysis) **and the device's cases with
+  their whole conversations** (see "Cloud-data deletion lifecycle" below).
+  → `200 { deleted: n, casesDeleted: m }`.
+- `DELETE /api/entries/:clientId` — delete one synced entry. Links referencing it, the
+  cached summary of its day and the background analysis row are removed as well (the
+  analysis is stale once an entry leaves); the delete triggers **no GenAI call** — the
+  analysis row is regenerated on the next sync and clients fall back to the default/local
+  analysis until then. Cases are device-scoped and are not touched by this route.
+  → `200 { deleted: 1 }` or `404 { "error": "entry_not_found" }`.
 - `GET /api/entries` → `{ entries, links }`: all synced entries (ASC) plus cross-record
   links (`fromClientId`, `toClientId`, `relation`, `note`, `createdAt`).
 - `GET /api/summaries/:day` (`YYYY-MM-DD`) → cached summary or a fresh `dailySummary` call
@@ -202,7 +208,10 @@ foreign ids).
   Case payload: `{ id, status, createdAt, updatedAt, claimCount, claimed, waitingNoWorker, messages }`
   where `waitingNoWorker` is the read-time `isWaiting` flag (queued/rematch older than
   `UNCLAIMED_TIMEOUT_HOURS`) and `messages` is the message count.
-- `POST /api/cases/:id/withdraw` — any non-withdrawn status → `withdrawn`. → `{ id, status }`.
+- `POST /api/cases/:id/withdraw` — any non-withdrawn status → `withdrawn`. The case row is
+  kept (period/timestamps metadata retained), but its shared content is deleted in the same
+  transaction: `excerpts` is cleared to `[]` and every message of the conversation is
+  removed (see "Cloud-data deletion lifecycle" below). → `{ id, status }`.
 - `POST /api/cases/:id/continue` — `replied` → `continued` (student continues the conversation).
 - `POST /api/cases/:id/rematch` — from `claimed|replied|continued|rematch`: returns the case to
   the queue — `status = 'queued'`, `claimed_by`/`claimed_at`/`responded_at` cleared,
@@ -216,23 +225,29 @@ foreign ids).
 
 ## Cloud-data deletion lifecycle
 
-Three entry points, one behaviour — delete every entry-scoped cloud row for the
-device (`entries`, `links`, `summaries` cache, `analyses`), in one transaction:
+Three entry points, one behaviour — delete every cloud row the device ever produced
+(`entries`, `links`, `summaries` cache, `analyses`, and the device's `cases` together with
+their `messages`), in one transaction:
 
-- `DELETE /api/entries` (whole device scope) → `200 { deleted: n }`;
-- `DELETE /api/entries/:clientId` (single record, plus its links and day-summary cache)
-  → `200 { deleted: 1 }` / `404 entry_not_found`;
+- `DELETE /api/entries` (whole device scope) → `200 { deleted: n, casesDeleted: m }`;
+- `DELETE /api/entries/:clientId` (single record, plus its links, its day-summary cache and
+  the background analysis row, which is regenerated on the next sync without any GenAI call)
+  → `200 { deleted: 1 }` / `404 entry_not_found`. This route is entry-scoped: cases and
+  messages are NOT touched by it;
 - `PUT /api/devices/me/consent { cloudOrg: false, purgeCloud: true }` → same full purge,
-  response includes `deleted: n`.
+  response includes `deleted: n` and `casesDeleted: m`.
 
-**Cases are explicitly out of scope.** Deidentified excerpts already shared with the cloud
-organisation inside a case (`cases.excerpts`) and the case conversation (`messages`) are
-NOT deleted by any of the routes above. The lifecycle of excerpts/messages in already
-shared cases (e.g. whether withdrawing consent should also close or purge open cases) is a
-separate product decision, still pending — current behaviour keeps them untouched.
+`deleted` always counts entries only (unchanged semantics); `casesDeleted` is an additive
+field returned by the whole-device routes and counts the deleted case rows.
+
+**Withdrawing a single case** (`POST /api/cases/:id/withdraw`) is the case-scoped half of
+the lifecycle: the case row is retained with `status = 'withdrawn'` (period, claim and
+timestamp metadata stays), but the content already shared with the cloud organisation is
+deleted in the same transaction — `excerpts` cleared to `[]` and the entire `messages`
+conversation removed. Withdrawn cases remain closed to workers (`404 case_not_found`,
+including for the claimant), so nothing shared stays readable or stored.
 
 ## Planned (later steps, not implemented here)
 
 None on the server: auth/consent, worker queue, GenAI features and student routes are all
 implemented. Remaining work is client-side (Expo app + worker-web) against this contract.
-The lifecycle of case excerpts after consent withdrawal is undecided (see above).

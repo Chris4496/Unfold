@@ -354,6 +354,23 @@ test('respond allowed again when status becomes continued (student replied)', as
   assert.equal(getCase(caseId).status, 'replied');
 });
 
+test('respond stores worker messages truncated to 1000 chars (MAX_WORKER_MESSAGE_CHARS)', async () => {
+  const w = insertWorker({});
+  const caseId = insertCase({ status: 'claimed', claimedBy: w.id, claimedAt: hoursAgo(0.5) });
+
+  const res = await api(`/api/worker/cases/${caseId}/respond`, {
+    method: 'POST',
+    body: { text: 'z'.repeat(1200) },
+    token: w.token,
+  });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.message.text.length, 1000);
+
+  // The stored row is truncated too, not just the response payload.
+  const stored = db.prepare('SELECT text FROM messages WHERE id = ?').get(res.body.message.id);
+  assert.equal(stored.text.length, 1000);
+});
+
 // --- Withdrawn cases (H6) --------------------------------------------------
 
 test('withdrawn case: detail and messages return 404 case_not_found, respond returns 409 invalid_status', async () => {

@@ -121,4 +121,4 @@ Recordings are sent to ElevenLabs for transcription; audio and transcripts remai
 ## Tests
 
 - Client: `cd unfold && npm test` — 29 tests covering de-identification, classification, prompt rules, transcription and the API client.
-- Server: `cd unfold/server && npm test` — 89 tests covering auth, consent, entry sync, cloud-data purge, case withdrawal, GenAI fallbacks, the worker queue and case transitions.
+- Server: `cd unfold/server && npm test` — 91 tests covering auth, consent, entry sync, cloud-data purge, case withdrawal, GenAI fallbacks, the worker queue and case transitions.
