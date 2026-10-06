@@ -267,18 +267,24 @@ export function Field({
   onChangeText,
   placeholder,
   multiline,
+  compact,
   accessibilityLabel,
 }: {
   value: string;
   onChangeText: (value: string) => void;
   placeholder?: string;
   multiline?: boolean;
+  /** Multiline input that starts one line tall and grows, for inline composers. */
+  compact?: boolean;
   accessibilityLabel?: string;
 }) {
   const fonts = useContext(FontContext);
+  // Web textareas do not grow with their content, so a compact field tracks its own height.
+  const [contentHeight, setContentHeight] = useState(22);
   return (
     <TextInput
       accessibilityLabel={accessibilityLabel}
+      onContentSizeChange={compact ? (event) => setContentHeight(event.nativeEvent.contentSize.height) : undefined}
       value={value}
       onChangeText={onChangeText}
       placeholder={placeholder}
@@ -290,7 +296,10 @@ export function Field({
         fontSize: 16,
         color: colors.navy,
         lineHeight: 22,
-        minHeight: multiline ? 140 : 44,
+        minHeight: compact ? 22 : multiline ? 140 : 44,
+        height: compact ? Math.min(110, Math.max(22, value ? contentHeight : 22)) : undefined,
+        // The surrounding composer pill frames the input, so drop the browser focus ring.
+        ...(compact ? ({ outlineStyle: 'none' } as object) : null),
         padding: 0,
       }}
     />

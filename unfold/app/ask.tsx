@@ -41,7 +41,7 @@ export default function AskScreen() {
       keyboard
       scroll
       footer={(
-        <View style={{ gap: 8 }}>
+        <View style={{ gap: 20 }}>
           <Button label={asking ? 'Asking…' : 'Ask'} onPress={() => void ask()} disabled={asking || question.trim().length === 0} />
           <StudentNav active="ask" />
         </View>
