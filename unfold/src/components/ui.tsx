@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { Children, createContext, useContext, type ReactNode } from 'react';
+import { Children, createContext, useContext, useState, type ReactNode } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -12,7 +12,7 @@ import {
   type StyleProp,
   type TextStyle,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme';
 import { CheckIcon, LockIcon } from './art';
 
@@ -81,12 +81,20 @@ export function Screen({
   /** Opt in only for screens whose layout genuinely needs a landscape canvas. */
   wide?: boolean;
 }) {
+  const insets = useSafeAreaInsets();
+  // The footer floats over the body, so reserve its measured height at the end of the content.
+  const [footerHeight, setFooterHeight] = useState(0);
+  const reserved = footer ? footerHeight : 0;
   const body = scroll ? (
-    <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    <ScrollView
+      contentContainerStyle={[styles.scroll, reserved > 0 && { paddingBottom: reserved + 8 }]}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
       {children}
     </ScrollView>
   ) : (
-    <View style={styles.fill}>{children}</View>
+    <View style={[styles.fill, { paddingBottom: reserved }]}>{children}</View>
   );
 
   const frame = (
@@ -98,7 +106,15 @@ export function Screen({
       {decor ? <View pointerEvents="none" style={styles.waveTop} /> : null}
       {decor ? <View pointerEvents="none" style={styles.sun} /> : null}
       {body}
-      {footer ? <View style={styles.footer}>{footer}</View> : null}
+      {footer ? (
+        <View
+          pointerEvents="box-none"
+          style={[styles.footer, { bottom: insets.bottom }]}
+          onLayout={(event) => setFooterHeight(event.nativeEvent.layout.height)}
+        >
+          {footer}
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 
@@ -334,6 +350,9 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   footer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
     paddingHorizontal: 24,
     paddingTop: 8,
     paddingBottom: 18,
