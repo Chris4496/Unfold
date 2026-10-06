@@ -1,0 +1,22 @@
+合成測試事件範例（非真實資料）
+
+此檔提供使用者 agents 的事件紀錄示例，供測試或格式核對參考。
+完整記錄建議按 references/api_reference.md 的事件紀錄契約，存成 JSON 陣列。
+
+run_id: demo-001
+journey_version: v1-approved
+role_id: student-demo
+task_id: approve-share
+step_id: step-03
+sequence: 3
+actor: synthetic-student
+channel: UI
+action: confirm-sharing
+expected: Approved summary becomes visible to assigned social worker
+observed: Pending verification in a simulated account
+evidence_ref: synthetic-fixture-only
+timestamp: Record actual time during execution; do not invent timestamps
+data_classification: synthetic
+gate_status: pause-until-confirmed
+
+此示例不證明真實產品行為；不可用於替代介面操作證據。
