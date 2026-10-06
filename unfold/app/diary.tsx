@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
+import { StudentNav } from '../src/components/studentNav';
 import { Back, Button, QuietButton, Screen, T } from '../src/components/ui';
 import { dayKey, entryWhen, formatMonth, monthGrid } from '../src/lib/dates';
 import { dailySummary } from '../src/lib/organise';
@@ -29,14 +30,18 @@ export default function DiaryScreen() {
   }
 
   return (
-    <Screen scroll>
+    <Screen scroll footer={<StudentNav active="diary" />}>
       <Back label="Home" href="/" />
       <T weight="extrabold" size={30}>
         Your diary
       </T>
-      <T size={15} color={colors.muted} style={{ marginTop: 6, marginBottom: 16 }}>
+      <T size={15} color={colors.muted} style={{ marginTop: 6, marginBottom: 12 }}>
         Tap a date to read that day. These summaries describe what you said. They are not an assessment.
       </T>
+      <View style={{ flexDirection: 'row', gap: 16, marginBottom: 12 }}>
+        <Pressable accessibilityRole="button" onPress={() => router.push('/timeline')} hitSlop={6}><T size={13} weight="bold" color={colors.teal}>Open timeline</T></Pressable>
+        <Pressable accessibilityRole="button" onPress={() => router.push('/graph')} hitSlop={6}><T size={13} weight="bold" color={colors.teal}>Open notes graph</T></Pressable>
+      </View>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <Pressable accessibilityRole="button" onPress={() => shift(-1)} hitSlop={8}>
           <T weight="bold" color={colors.teal}>‹</T>
@@ -96,13 +101,6 @@ export default function DiaryScreen() {
       {store.entries.length === 0 ? (
         <View style={{ marginTop: 12, gap: 8 }}>
           <Button label="Record a note" onPress={() => router.replace('/')} />
-          <Button
-            label="Load sample notes"
-            tone="secondary"
-            onPress={() => {
-              store.loadSamples();
-            }}
-          />
         </View>
       ) : null}
       <View style={{ alignItems: 'center', marginTop: 12 }}>

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, View } from 'react-native';
-import Svg, { Path, Rect } from 'react-native-svg';
+import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { colors } from '../theme';
 
 export function MicIcon({ size = 36 }: { size?: number }) {
@@ -149,6 +149,19 @@ export function RecordButton({ recording, onPress }: { recording: boolean; onPre
       </Pressable>
       <Waveform active={recording} />
     </View>
+  );
+}
+
+export function TimelineArt() {
+  return (
+    <Svg width={148} height={96} viewBox="0 0 148 96" accessibilityLabel="Decorative notebook and leaves">
+      <Path d="M12 76c22-16 44-20 65-8 18-16 37-18 58-8" fill="none" stroke="#C5DDD4" strokeWidth={4} strokeLinecap="round" />
+      <Rect x={48} y={22} width={52} height={58} rx={7} fill="#FFFFFF" stroke="#D9E8E2" strokeWidth={2} transform="rotate(-7 74 51)" />
+      <Path d="M58 39h29M57 49h30M56 59h24" stroke="#AFC9C0" strokeWidth={3} strokeLinecap="round" />
+      <Path d="M112 71c-9-15-5-29 7-38 2 14 0 27-7 38Zm-3-13c-14-5-20-15-19-27 12 6 19 15 19 27Z" fill="#77B2A2" />
+      <Circle cx={30} cy={26} r={9} fill="#F6D7C8" />
+      <Path d="M30 9v-5M14 15l-4-4M46 15l4-4" stroke="#F0B89A" strokeWidth={3} strokeLinecap="round" />
+    </Svg>
   );
 }
 

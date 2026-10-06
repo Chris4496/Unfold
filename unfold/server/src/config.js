@@ -9,6 +9,7 @@ export function loadConfig(env = process.env) {
   return {
     port: Number(env.PORT || 8787),
     dbPath: env.DB_PATH || './unfold.db',
+    demoMode: env.DEMO_MODE === '1' && env.NODE_ENV !== 'production',
     jwtSecret: env.JWT_SECRET || 'dev-only-secret-change-me',
     geminiApiKey: env.GEMINI_API_KEY || '',
     geminiBaseUrl: env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai',

@@ -20,13 +20,22 @@ export const EXPERTISE_OPTIONS = [
 
 const AuthContext = createContext(null);
 
+const DEMO_AUTO_LOGIN = import.meta.env.DEV && import.meta.env.VITE_DEMO_AUTO_LOGIN === '1';
+
 export function AuthProvider({ children }) {
   const [worker, setWorker] = useState(null);
-  const [loading, setLoading] = useState(Boolean(getToken()));
+  const [loading, setLoading] = useState(Boolean(getToken()) || DEMO_AUTO_LOGIN);
 
-  // On boot, restore the session from the stored token.
+  // Restore an existing session, or use the seeded local demo account when
+  // start-all.sh explicitly enables the local-only auto-login flag.
   useEffect(() => {
-    if (!getToken()) return;
+    if (!getToken()) {
+      if (!DEMO_AUTO_LOGIN) return;
+      login('demo.worker@unfold.local', 'demo1234')
+        .catch(() => undefined)
+        .finally(() => setLoading(false));
+      return;
+    }
     let cancelled = false;
     api('/workers/me')
       .then((data) => {

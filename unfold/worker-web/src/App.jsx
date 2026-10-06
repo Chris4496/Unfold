@@ -4,6 +4,7 @@ import Header from './components/Header.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import VerificationPending from './pages/VerificationPending.jsx';
+import Dashboard from './pages/Dashboard.jsx';
 import Queue from './pages/Queue.jsx';
 import Cases from './pages/Cases.jsx';
 import CaseDetail from './pages/CaseDetail.jsx';
@@ -56,6 +57,14 @@ export default function App() {
             }
           />
           <Route
+            path="/dashboard"
+            element={
+              <RequireVerified>
+                <Dashboard />
+              </RequireVerified>
+            }
+          />
+          <Route
             path="/queue"
             element={
               <RequireVerified>
@@ -87,8 +96,8 @@ export default function App() {
               </RequireAuth>
             }
           />
-          <Route path="/" element={<Navigate to="/queue" replace />} />
-          <Route path="*" element={<Navigate to="/queue" replace />} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
     </div>

@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
+import { StudentNav } from '../src/components/studentNav';
 import { askWithFallback, type AskOutcome } from '../src/api';
 import { Back, Button, Card, Field, Screen, T } from '../src/components/ui';
 import { dayKey } from '../src/lib/dates';
@@ -36,7 +37,16 @@ export default function AskScreen() {
   }
 
   return (
-    <Screen keyboard scroll footer={<Button label={asking ? 'Asking…' : 'Ask'} onPress={() => void ask()} disabled={asking || question.trim().length === 0} />}>
+    <Screen
+      keyboard
+      scroll
+      footer={(
+        <View style={{ gap: 8 }}>
+          <Button label={asking ? 'Asking…' : 'Ask'} onPress={() => void ask()} disabled={asking || question.trim().length === 0} />
+          <StudentNav active="ask" />
+        </View>
+      )}
+    >
       <Back label="Home" href="/" />
       <T weight="extrabold" size={30}>
         Ask your diary

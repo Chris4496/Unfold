@@ -1,0 +1,46 @@
+{
+  "persona": {
+    "name": "Maya",
+    "context": "A fictional Hong Kong university student balancing coursework, friends and family expectations. Every diary item and exchange below is simulated."
+  },
+  "case": {
+    "id": "case_unfold_fictional_maya_v1",
+    "period": "Fictional student demo · three-week history",
+    "mainConcerns": "A group presentation became difficult to manage alongside coursework and family expectations about grades. Sleep was affected for several nights, and Maya found it hard to ask for help early.",
+    "recentChange": "Maya checked in with a tutor, agreed clearer group roles, and has started speaking up sooner. Sleep is improving, though the next family conversation still feels daunting.",
+    "language": "en",
+    "topics": ["academic", "family", "group", "sleep", "friends"],
+    "createdDaysAgo": 2,
+    "createdTime": "10:00",
+    "claimedDaysAgo": 2,
+    "claimedTime": "13:00",
+    "continuedDaysAgo": 1,
+    "continuedTime": "18:30"
+  },
+  "notes": [
+    { "id": "maya-note-01", "daysAgo": 20, "time": "19:10", "text": "Took the MTR to campus for an early lecture and picked up congee on the way. I was tired, but it was nice to see the harbour on the walk from the station." },
+    { "id": "maya-note-02", "daysAgo": 19, "time": "20:20", "text": "Had dinner with a friend after class. We compared our reading notes and made a plan to study together before the presentation." },
+    { "id": "maya-note-03", "daysAgo": 18, "time": "18:40", "text": "Helped a classmate make sense of the lecture slides. I like explaining things when there is no rush." },
+    { "id": "maya-note-04", "daysAgo": 17, "time": "21:00", "text": "Submitted the short reading response before dinner. I felt proud that I did not leave it until midnight." },
+    { "id": "maya-note-05", "daysAgo": 16, "time": "19:30", "text": "Our group divided the presentation work. I took the introduction and research notes, and one teammate offered to prepare the slides." },
+    { "id": "maya-note-06", "daysAgo": 15, "time": "20:45", "text": "I messaged the group to check when we could rehearse. No one answered for most of the evening, so I kept refreshing my phone." },
+    { "id": "maya-note-07", "daysAgo": 14, "time": "22:15", "text": "The slides were still incomplete when we met. We moved some tasks around, but I felt the extra work landed on me again." },
+    { "id": "maya-note-08", "daysAgo": 13, "time": "23:20", "text": "I lay awake thinking about the group presentation and tomorrow's reading. I kept telling myself I should be able to handle it." },
+    { "id": "maya-note-09", "daysAgo": 12, "time": "21:10", "text": "Mum asked about my grades during dinner and compared them with a cousin's results. I know she wants me to do well, but I felt tense." },
+    { "id": "maya-note-10", "daysAgo": 11, "time": "18:25", "text": "A friend saved me a seat at lunch. I talked for a while instead of going straight back to the library, and that helped me feel less alone." },
+    { "id": "maya-note-11", "daysAgo": 10, "time": "22:40", "text": "I rewrote part of the presentation because I was worried the group would think my section was not good enough. I did not ask the tutor what was expected." },
+    { "id": "maya-note-12", "daysAgo": 9, "eventDaysAgo": 11, "time": "20:05", "eventTime": "16:00", "text": "Thinking back to Tuesday's tutorial, I wanted to ask about dividing the work fairly but kept quiet. I wrote the question down so I can try next time." },
+    { "id": "maya-note-13", "daysAgo": 8, "time": "19:15", "text": "I went for a short walk after class and left my phone in my bag. I slept better than the night before." },
+    { "id": "maya-note-14", "daysAgo": 7, "time": "21:30", "text": "A friend and I rehearsed our parts in the library. We made a small checklist, and the presentation felt more manageable." },
+    { "id": "maya-note-15", "daysAgo": 6, "time": "20:35", "text": "I asked the tutor after class how to handle a group member who misses deadlines. The tutor suggested agreeing on tasks in writing and checking in early." },
+    { "id": "maya-note-16", "daysAgo": 5, "time": "22:00", "text": "I sent the group a clear list of who is doing each slide. One teammate replied and took a section, which was a relief." },
+    { "id": "maya-note-17", "daysAgo": 4, "time": "21:25", "text": "We finished the presentation rehearsal. I was nervous, but I explained my section and the group listened. I felt more confident afterwards." },
+    { "id": "maya-note-18", "daysAgo": 3, "time": "20:50", "text": "The presentation is submitted. I slept longer last night and told Mum I am working steadily, even if I do not have every grade figured out yet." }
+  ],
+  "messages": [
+    { "id": "maya-message-01", "sender": "worker", "daysAgo": 1, "time": "09:00", "text": "Thank you for explaining what the group work and expectations at home have been like. It sounds as though you have been carrying several tasks at once. What feels like one manageable next step?" },
+    { "id": "maya-message-02", "sender": "student", "daysAgo": 1, "time": "12:30", "text": "I could ask the tutor how to make the task split clearer. I was worried that would sound like complaining, but I want to try asking about the work rather than blaming anyone." },
+    { "id": "maya-message-03", "sender": "worker", "daysAgo": 1, "time": "15:00", "text": "That sounds like a practical way to start. You could describe the tasks and ask for a fair plan. You also mentioned that a short walk and talking with a friend helped; those are options to keep in your week." },
+    { "id": "maya-message-04", "sender": "student", "daysAgo": 1, "time": "17:00", "text": "I did ask the tutor, and we wrote down who would handle each slide. I sent the plan to the group. I still feel nervous about talking with Mum, but I can tell her what I have finished." }
+  ]
+}

@@ -85,14 +85,14 @@ ensure_dependencies "$SERVER_DIR"
 ensure_dependencies "$WORKER_DIR"
 ensure_dependencies "$CLIENT_DIR"
 
-# Seed is idempotent and creates the local demo worker accounts.
-echo "Seeding local demo accounts..."
-(cd "$SERVER_DIR" && npm run seed)
+# Keep fictional bootstrap in a dedicated local DB, never the ordinary user DB.
+echo "Seeding the isolated local demo database..."
+(cd "$SERVER_DIR" && DB_PATH=./unfold-local-demo.db npm run seed)
 
 echo "Starting API server..."
 (
   cd "$SERVER_DIR"
-  exec npm run dev
+  NODE_ENV=development DB_PATH=./unfold-local-demo.db DEMO_MODE=1 exec npm run dev
 ) &
 SERVER_PID=$!
 PIDS+=("$SERVER_PID")
@@ -124,7 +124,7 @@ start_service() {
   NAMES+=("$name")
 }
 
-start_service "Social-worker console" "$WORKER_DIR" npm run dev
+start_service "Social-worker console" "$WORKER_DIR" env VITE_DEMO_AUTO_LOGIN=1 npm run dev
 start_service "Student app (web)" "$CLIENT_DIR" npm run web
 
 echo

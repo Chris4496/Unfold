@@ -16,7 +16,7 @@ export default function Login() {
     setBusy(true);
     try {
       await login(email.trim(), password);
-      navigate('/queue', { replace: true });
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(
         err.code === 'invalid_credentials'

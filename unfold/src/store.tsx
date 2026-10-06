@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   caseTopics,
   createCase,
@@ -8,6 +8,7 @@ import {
   detectCaseLanguage,
   getActiveCase,
   getCaseMessages,
+  getFictionalDemoSession,
   postCaseMessage,
   registerDevice,
   setCloudConsent,
@@ -17,12 +18,16 @@ import {
   type BriefResponseKind,
   type SyncResult,
 } from './api';
-import { buildSampleEntries } from './lib/samples';
 import { annotateEntry, buildDraft, shouldOfferSupport } from './lib/organise';
+import {
+  buildFictionalDemoData,
+  FICTIONAL_DEMO_ACTIVE_KEY,
+  FICTIONAL_DEMO_STORAGE_KEY,
+  PERSONAL_STORAGE_KEY,
+} from './lib/fictionalDemo';
+import { runIfSessionCurrent, SessionScopeGuard, type SessionScope } from './lib/sessionScope';
 import { uid } from './lib/text';
 import type { AttributeId, CaseItem, Draft, Entry, Message, Persisted, TopicId } from './types';
-
-const KEY = 'unfold.v1';
 
 const EMPTY: Persisted = {
   onboarded: false,
@@ -76,7 +81,11 @@ type Store = Persisted & {
   addEntry: (transcript: string, audioUri?: string) => Entry | null;
   setEventTime: (id: string, eventAt: string) => void;
   deleteEntry: (id: string) => void;
-  loadSamples: () => void;
+  isDemo: boolean;
+  demoLoading: boolean;
+  demoError: string | null;
+  enterDemo: () => Promise<boolean>;
+  exitDemo: () => Promise<void>;
   clearAll: () => void;
   dismissPrompt: () => void;
   prepareDraft: () => Draft | null;
@@ -98,13 +107,39 @@ const StoreContext = createContext<Store | null>(null);
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<Persisted>(EMPTY);
   const [ready, setReady] = useState(false);
+  const [isDemo, setIsDemo] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [demoError, setDemoError] = useState<string | null>(null);
+  const sessionGuardRef = useRef<SessionScopeGuard | null>(null);
+  if (!sessionGuardRef.current) sessionGuardRef.current = new SessionScopeGuard();
+  const sessionGuard = sessionGuardRef.current;
+  const storageQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const transitionRef = useRef(0);
+  const demoLoadingRef = useRef(false);
+  const exitPendingRef = useRef(false);
+
+  function serializeStorage<T>(operation: () => Promise<T>): Promise<T> {
+    const result = storageQueueRef.current.then(operation, operation);
+    storageQueueRef.current = result.then(() => undefined, () => undefined);
+    return result;
+  }
 
   useEffect(() => {
     let active = true;
-    AsyncStorage.getItem(KEY)
-      .then((raw) => {
+    Promise.all([
+      AsyncStorage.getItem(PERSONAL_STORAGE_KEY),
+      AsyncStorage.getItem(FICTIONAL_DEMO_ACTIVE_KEY),
+      AsyncStorage.getItem(FICTIONAL_DEMO_STORAGE_KEY),
+    ])
+      .then(([personalRaw, demoActive, demoRaw]) => {
         if (!active) return;
-        if (raw) setData(sanitize(JSON.parse(raw)));
+        if (demoActive === '1' && demoRaw) {
+          sessionGuard.activate(true);
+          setData(sanitize(JSON.parse(demoRaw)));
+          setIsDemo(true);
+        } else if (personalRaw) {
+          setData(sanitize(JSON.parse(personalRaw)));
+        }
       })
       .catch(() => undefined)
       .finally(() => {
@@ -115,16 +150,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  function commit(next: Persisted) {
-    setData(next);
-    AsyncStorage.setItem(KEY, JSON.stringify(next)).catch(() => undefined);
+  function commit(next: Persisted, scope: SessionScope | null = sessionGuard.capture()) {
+    if (!scope) return;
+    setData((current) => {
+      const result = runIfSessionCurrent(sessionGuard, scope, () => {
+        void serializeStorage(() => AsyncStorage.setItem(scope.storageKey, JSON.stringify(next))).catch(() => undefined);
+        return next;
+      });
+      return result.applied ? result.value : current;
+    });
   }
 
-  function update(recipe: (current: Persisted) => Persisted) {
+  function update(
+    recipe: (current: Persisted) => Persisted,
+    scope: SessionScope | null = sessionGuard.capture(),
+  ) {
+    if (!scope) return;
     setData((current) => {
-      const next = recipe(current);
-      AsyncStorage.setItem(KEY, JSON.stringify(next)).catch(() => undefined);
-      return next;
+      const result = runIfSessionCurrent(sessionGuard, scope, () => {
+        const next = recipe(current);
+        void serializeStorage(() => AsyncStorage.setItem(scope.storageKey, JSON.stringify(next))).catch(() => undefined);
+        return next;
+      });
+      return result.applied ? result.value : current;
     });
   }
 
@@ -138,7 +186,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * Returns null when the server is unreachable — callers then keep working
    * fully on-device.
    */
-  async function ensureDeviceToken(current: Persisted): Promise<string | null> {
+  async function ensureDeviceToken(current: Persisted, scope: SessionScope): Promise<string | null> {
     if (current.deviceToken) return current.deviceToken;
     try {
       const installId = current.installId ?? `${uid()}${uid()}`;
@@ -148,7 +196,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         installId,
         deviceToken: registration.token,
         cloudOrg: Boolean(registration.cloudOrg),
-      }));
+      }), scope);
       return registration.token;
     } catch {
       return null;
@@ -159,7 +207,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * Merge server classification results back into local entries and mark them
    * as synced (the flag scopes later per-entry cloud deletes).
    */
-  function mergeSyncResults(results: SyncResult[]) {
+  function mergeSyncResults(results: SyncResult[], scope: SessionScope) {
     update((current) => ({
       ...current,
       entries: current.entries.map((item) => {
@@ -174,7 +222,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           synced: true,
         };
       }),
-    }));
+    }), scope);
   }
 
   /**
@@ -182,11 +230,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * (never the transcript) and merges the returned classification back into
    * the local entry. Offline/failure silently keeps the local rules.
    */
-  function syncEntryToCloud(entry: Entry) {
-    if (!data.cloudOrg || !data.deviceToken) return;
+  function syncEntryToCloud(entry: Entry, scope: SessionScope) {
+    if (!data.cloudOrg || !data.deviceToken || !sessionGuard.isCurrent(scope)) return;
     const token = data.deviceToken;
     syncEntries(token, [toSyncPayload(entry)])
-      .then(({ results }) => mergeSyncResults(results))
+      .then(({ results }) => mergeSyncResults(results, scope))
       .catch(() => undefined);
   }
 
@@ -195,16 +243,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * text of every existing local note (batched to the server's 200-per-call
    * limit). Failures degrade silently to the on-device rules and are logged.
    */
-  function backfillCloud(entries: Entry[], token: string) {
+  function backfillCloud(entries: Entry[], token: string, scope: SessionScope) {
     const batches: Entry[][] = [];
     for (let index = 0; index < entries.length; index += 200) {
       batches.push(entries.slice(index, index + 200));
     }
     void (async () => {
       for (const batch of batches) {
+        if (!sessionGuard.isCurrent(scope)) return;
         try {
           const { results } = await syncEntries(token, batch.map(toSyncPayload));
-          mergeSyncResults(results);
+          if (!sessionGuard.isCurrent(scope)) return;
+          mergeSyncResults(results, scope);
         } catch (error) {
           console.warn('[unfold] cloud backfill failed for a batch of', batch.length, 'entries', error);
         }
@@ -216,29 +266,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     shouldOfferSupport(data.entries) && data.entries.length >= data.snoozeUntilCount && openCase == null;
 
   const store = useMemo<Store>(() => {
+    const scope = sessionGuard.capture();
+    const scopedUpdate = (recipe: (current: Persisted) => Persisted) => update(recipe, scope);
+    const scopedCommit = (next: Persisted) => commit(next, scope);
     return {
       ...data,
       ready,
+      isDemo,
+      demoLoading,
+      demoError,
       shouldPrompt,
       openCase,
-      completeOnboarding: () => update((current) => ({ ...current, onboarded: true })),
+      completeOnboarding: () => scopedUpdate((current) => ({ ...current, onboarded: true })),
       setCloudOrg: async (next) => {
-        const token = await ensureDeviceToken(data);
-        if (!token) return false;
+        if (isDemo || !scope) return false;
+        const token = await ensureDeviceToken(data, scope);
+        if (!token || !sessionGuard.isCurrent(scope)) return false;
         try {
           // Turning the consent off also asks the server to purge every cloud
           // copy of this device's entries (contract: purgeCloud only with off).
           const result = await setCloudConsent(token, next, next ? undefined : { purgeCloud: true });
-          update((current) => ({ ...current, cloudOrg: Boolean(result.cloudOrg) }));
+          if (!sessionGuard.isCurrent(scope)) return false;
+          scopedUpdate((current) => ({ ...current, cloudOrg: Boolean(result.cloudOrg) }));
           // Turning it on backfills existing local notes (deidentified text only).
-          if (result.cloudOrg && data.entries.length > 0) backfillCloud(data.entries, token);
+          if (result.cloudOrg && data.entries.length > 0) backfillCloud(data.entries, token, scope);
           return Boolean(result.cloudOrg);
         } catch {
           return false;
         }
       },
       noteResponseKind: (kind) =>
-        update((current) => ({
+        scopedUpdate((current) => ({
           ...current,
           recentResponseKinds: [...current.recentResponseKinds, kind].slice(-5),
         })),
@@ -246,39 +304,130 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const trimmed = transcript.trim();
         if (!trimmed) return null;
         const entry = annotateEntry(trimmed, new Date().toISOString(), uid(), audioUri);
-        update((current) => ({ ...current, entries: [...current.entries, entry] }));
-        syncEntryToCloud(entry);
+        scopedUpdate((current) => ({ ...current, entries: [...current.entries, entry] }));
+        if (scope) syncEntryToCloud(entry, scope);
         return entry;
       },
       setEventTime: (id, eventAt) => {
-        update((current) => ({
+        scopedUpdate((current) => ({
           ...current,
           entries: current.entries.map((entry) => (entry.id === id ? { ...entry, eventAt } : entry)),
         }));
         // The server accepts eventAt updates: re-sync this note when cloud is on.
         const entry = data.entries.find((item) => item.id === id);
-        if (entry) syncEntryToCloud({ ...entry, eventAt });
+        if (entry && scope) syncEntryToCloud({ ...entry, eventAt }, scope);
       },
       deleteEntry: (id) => {
         const target = data.entries.find((entry) => entry.id === id);
         // Propagate the delete to the cloud copy, but only for entries known
         // to have synced. Failure is logged and never blocks the local delete.
-        if (target?.synced && data.cloudOrg && data.deviceToken) {
+        if (target?.synced && data.cloudOrg && data.deviceToken && scope && sessionGuard.isCurrent(scope)) {
           void deleteCloudEntry(data.deviceToken, id).catch((error) =>
             console.warn('[unfold] cloud delete failed for entry', id, error),
           );
         }
-        update((current) => ({ ...current, entries: current.entries.filter((entry) => entry.id !== id) }));
+        scopedUpdate((current) => ({ ...current, entries: current.entries.filter((entry) => entry.id !== id) }));
       },
-      loadSamples: () => {
-        const samples = buildSampleEntries();
-        update((current) => ({
-          ...current,
-          entries: [...current.entries.filter((entry) => !entry.id.startsWith('sample-')), ...samples],
-          snoozeUntilCount: 0,
-        }));
+      enterDemo: async () => {
+        if (demoLoadingRef.current) return false;
+        if (sessionGuard.capture()?.isDemo) {
+          setDemoError(null);
+          return true;
+        }
+        if (isDemo && exitPendingRef.current) {
+          const transition = ++transitionRef.current;
+          const transitionIsCurrent = () => transitionRef.current === transition;
+          exitPendingRef.current = false;
+          sessionGuard.activate(true);
+          setIsDemo(true);
+          try {
+            const active = await serializeStorage(async () => {
+              if (!transitionIsCurrent()) return false;
+              await AsyncStorage.setItem(FICTIONAL_DEMO_ACTIVE_KEY, '1');
+              return transitionIsCurrent();
+            });
+            return active && transitionIsCurrent();
+          } catch {
+            if (transitionIsCurrent()) {
+              exitPendingRef.current = false;
+              setDemoError('Could not safely cancel demo exit because local storage is unavailable. Your fictional session remains active.');
+            }
+            return false;
+          }
+        }
+        demoLoadingRef.current = true;
+        const transition = ++transitionRef.current;
+        const transitionIsCurrent = () => transitionRef.current === transition;
+        setDemoLoading(true);
+        setDemoError(null);
+        try {
+          const session = await getFictionalDemoSession();
+          if (!transitionIsCurrent()) return false;
+          const { messages } = await getCaseMessages(session.deviceToken, session.case.id);
+          if (!transitionIsCurrent()) return false;
+          const stored = await serializeStorage(() => AsyncStorage.getItem(FICTIONAL_DEMO_STORAGE_KEY));
+          if (!transitionIsCurrent()) return false;
+          const previous = stored ? sanitize(JSON.parse(stored)) : null;
+          const next = buildFictionalDemoData(session, messages, previous);
+          const activated = await serializeStorage(async () => {
+            if (!transitionIsCurrent()) return false;
+            await AsyncStorage.setItem(FICTIONAL_DEMO_STORAGE_KEY, JSON.stringify(next));
+            if (!transitionIsCurrent()) return false;
+            await AsyncStorage.setItem(FICTIONAL_DEMO_ACTIVE_KEY, '1');
+            return transitionIsCurrent();
+          });
+          if (!activated || !transitionIsCurrent()) return false;
+          sessionGuard.activate(true);
+          setData(next);
+          setIsDemo(true);
+          return true;
+        } catch {
+          if (transitionIsCurrent()) {
+            setDemoError('The local demo server is unavailable or demo mode is disabled. Run ./start-all.sh, then retry; your personal records were not changed.');
+          }
+          return false;
+        } finally {
+          if (transitionIsCurrent()) {
+            demoLoadingRef.current = false;
+            setDemoLoading(false);
+          }
+        }
+      },
+      exitDemo: async () => {
+        const activeScope = sessionGuard.capture();
+        if (!activeScope?.isDemo) return;
+        const transition = ++transitionRef.current;
+        const transitionIsCurrent = () => transitionRef.current === transition;
+        exitPendingRef.current = true;
+        sessionGuard.suspend();
+        demoLoadingRef.current = false;
+        setDemoLoading(false);
+        setDemoError(null);
+        try {
+          const restoration = await serializeStorage(async () => {
+            if (!transitionIsCurrent()) return { current: false as const };
+            await AsyncStorage.removeItem(FICTIONAL_DEMO_ACTIVE_KEY);
+            if (!transitionIsCurrent()) return { current: false as const };
+            return { current: true as const, personalRaw: await AsyncStorage.getItem(PERSONAL_STORAGE_KEY) };
+          });
+          if (!transitionIsCurrent() || !restoration.current) return;
+          exitPendingRef.current = false;
+          sessionGuard.activate(false);
+          setData(restoration.personalRaw ? sanitize(JSON.parse(restoration.personalRaw)) : EMPTY);
+          setIsDemo(false);
+        } catch {
+          if (transitionIsCurrent()) {
+            exitPendingRef.current = false;
+            sessionGuard.activate(true);
+            await serializeStorage(() => AsyncStorage.setItem(FICTIONAL_DEMO_ACTIVE_KEY, '1')).catch(() => undefined);
+            if (transitionIsCurrent()) {
+              setDemoError('Could not safely exit the demo because local storage is unavailable. Your fictional session remains active.');
+            }
+          }
+        }
       },
       clearAll: () => {
+        if (!scope || !sessionGuard.isCurrent(scope)) return;
         // "Delete everything" also deletes every cloud copy of this device's
         // entries. Failure is logged and never blocks the local wipe.
         if (data.cloudOrg && data.deviceToken) {
@@ -286,12 +435,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             console.warn('[unfold] cloud delete-all failed', error),
           );
         }
-        commit({ ...EMPTY, onboarded: true });
+        scopedCommit({ ...EMPTY, onboarded: true });
       },
-      dismissPrompt: () => update((current) => ({ ...current, snoozeUntilCount: current.entries.length + 2 })),
+      dismissPrompt: () => scopedUpdate((current) => ({ ...current, snoozeUntilCount: current.entries.length + 2 })),
       prepareDraft: () => {
         let created: Draft | null = data.draft;
-        update((current) => {
+        scopedUpdate((current) => {
           if (current.entries.length === 0) return current;
           const draft = buildDraft(current.entries);
           created = draft;
@@ -301,7 +450,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return created;
       },
       updateDraft: (mainConcerns, recentChange) =>
-        update((current) => {
+        scopedUpdate((current) => {
           if (!current.draft) return current;
           return {
             ...current,
@@ -313,7 +462,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           };
         }),
       approveSharing: async () => {
-        if (!data.draft) return null;
+        if (!scope || !sessionGuard.isCurrent(scope) || !data.draft) return null;
         const draft = data.draft;
         let id = uid();
         let remote = false;
@@ -333,6 +482,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             // Server unreachable: keep a clearly-labelled local demo case.
           }
         }
+        if (!sessionGuard.isCurrent(scope)) return null;
         const item: CaseItem = {
           id,
           createdAt: new Date().toISOString(),
@@ -341,7 +491,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           seenReply: true,
           remote,
         };
-        update((current) => ({
+        scopedUpdate((current) => ({
           ...current,
           draft: null,
           cases: [...current.cases, item],
@@ -349,14 +499,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return item;
       },
       refreshCaseFromServer: async () => {
-        if (!data.cloudOrg || !data.deviceToken) return;
+        if (!scope || !sessionGuard.isCurrent(scope) || (!data.cloudOrg && !isDemo) || !data.deviceToken) return;
         const target = openCase;
         if (!target || !target.remote) return;
         try {
           const { case: active } = await getActiveCase(data.deviceToken);
-          if (!active || active.id !== target.id) return;
+          if (!sessionGuard.isCurrent(scope) || !active || active.id !== target.id) return;
           const { messages } = await getCaseMessages(data.deviceToken, active.id);
-          update((current) => ({
+          if (!sessionGuard.isCurrent(scope)) return;
+          scopedUpdate((current) => ({
             ...current,
             messages: [
               ...current.messages.filter((message) => message.caseId !== active.id),
@@ -386,22 +537,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       },
       withdrawCase: (id) => {
+        if (!scope || !sessionGuard.isCurrent(scope)) return;
         const target = data.cases.find((item) => item.id === id);
         if (target?.remote && data.deviceToken) {
           void transitionCase(data.deviceToken, id, 'withdraw').catch(() => undefined);
         }
-        update((current) => ({
+        scopedUpdate((current) => ({
           ...current,
           snoozeUntilCount: current.entries.length + 2,
           cases: current.cases.map((item) => (item.id === id ? { ...item, status: 'withdrawn' } : item)),
         }));
       },
       rematchCase: (id) => {
+        if (!scope || !sessionGuard.isCurrent(scope)) return;
         const target = data.cases.find((item) => item.id === id);
         if (target?.remote && data.deviceToken) {
           void transitionCase(data.deviceToken, id, 'rematch').catch(() => undefined);
         }
-        update((current) => ({
+        scopedUpdate((current) => ({
           ...current,
           cases: current.cases.map((item) =>
             item.id === id
@@ -414,21 +567,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }));
       },
       continueCase: (id) => {
+        if (!scope || !sessionGuard.isCurrent(scope)) return;
         const target = data.cases.find((item) => item.id === id);
         if (target?.remote && data.deviceToken) {
           void transitionCase(data.deviceToken, id, 'continue').catch(() => undefined);
         }
-        update((current) => ({
+        scopedUpdate((current) => ({
           ...current,
           cases: current.cases.map((item) => (item.id === id ? { ...item, status: 'continued', seenReply: true } : item)),
         }));
       },
       markReplySeen: (id) =>
-        update((current) => ({
+        scopedUpdate((current) => ({
           ...current,
           cases: current.cases.map((item) => (item.id === id ? { ...item, seenReply: true } : item)),
         })),
       sendMessage: (caseId, from, text) => {
+        if (!scope || !sessionGuard.isCurrent(scope)) return;
         const trimmed = text.trim();
         if (!trimmed) return;
         const target = data.cases.find((item) => item.id === caseId);
@@ -443,7 +598,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           text: trimmed.slice(0, 500),
           createdAt: new Date().toISOString(),
         };
-        update((current) => ({
+        scopedUpdate((current) => ({
           ...current,
           messages: [...current.messages, message],
           cases: current.cases.map((item) => {
@@ -460,7 +615,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
     // update is recreated each render and closes over the latest data for draft/approve.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, ready, shouldPrompt, openCase]);
+  }, [data, ready, shouldPrompt, openCase, isDemo, demoLoading, demoError]);
 
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
 }

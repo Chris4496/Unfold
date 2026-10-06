@@ -71,12 +71,15 @@ export function Screen({
   scroll,
   keyboard,
   decor = false,
+  wide = false,
 }: {
   children: ReactNode;
   footer?: ReactNode;
   scroll?: boolean;
   keyboard?: boolean;
   decor?: boolean;
+  /** Opt in only for screens whose layout genuinely needs a landscape canvas. */
+  wide?: boolean;
 }) {
   const body = scroll ? (
     <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -87,7 +90,11 @@ export function Screen({
   );
 
   const frame = (
-    <SafeAreaView style={styles.frame} edges={['top', 'bottom']} dataSet={{ unfoldFrame: 'true' }}>
+    <SafeAreaView
+      style={[styles.frame, wide && styles.wideFrame]}
+      edges={['top', 'bottom']}
+      dataSet={{ unfoldFrame: 'true', ...(wide ? { unfoldWide: 'true' } : {}) }}
+    >
       {decor ? <View pointerEvents="none" style={styles.waveTop} /> : null}
       {decor ? <View pointerEvents="none" style={styles.sun} /> : null}
       {body}
@@ -319,6 +326,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
+  wideFrame: { maxWidth: 1600 },
   scroll: {
     paddingHorizontal: 24,
     paddingTop: 8,

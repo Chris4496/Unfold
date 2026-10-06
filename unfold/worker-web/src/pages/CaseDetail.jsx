@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
@@ -10,256 +10,422 @@ import {
   TopicChips,
   formatDateTime,
 } from '../components/Chips.jsx';
+import { buildTimelineEvents, excerptDate, excerptText, filterMapEvents, matchingTopics } from '../viewModel.js';
 
-/**
- * Excerpts are JSON on the server; each entry may be a plain string or an
- * object carrying a date. Render them tolerantly.
- */
-function excerptDate(ex) {
-  if (ex && typeof ex === 'object') {
-    return ex.date || ex.event_at || ex.created_at || null;
-  }
-  return null;
+function senderLabel(message, me) {
+  if (message.sender !== 'worker') return 'Student';
+  if (message.worker_name) return me && message.worker_name === me.name ? 'You' : message.worker_name;
+  return 'Worker (name not recorded)';
 }
 
-function excerptText(ex) {
-  if (ex && typeof ex === 'object') {
-    return ex.text || ex.deidentified || ex.excerpt || JSON.stringify(ex);
-  }
-  return String(ex);
+function eventDateLabel(event) {
+  return event.dateKnown ? formatDateTime(event.date) : 'Date not recorded';
 }
 
-function Excerpt({ excerpt, index }) {
-  const date = excerptDate(excerpt);
+function ApprovedRecords({ excerpts }) {
+  const records = Array.isArray(excerpts) ? excerpts : [];
   return (
-    <details className="excerpt">
-      <summary>
-        Excerpt {index + 1}
-        {date && <span className="muted small"> — {formatDateTime(date)}</span>}
-      </summary>
-      <blockquote>{excerptText(excerpt)}</blockquote>
-    </details>
+    <section className="card approved-records" aria-labelledby="approved-records-heading">
+      <h2 id="approved-records-heading">Complete student-approved source records</h2>
+      <p className="muted small">These are the complete de-identified text entries authorized for this case, with their source IDs and dates. Original audio and transcripts are not available.</p>
+      {records.length === 0 ? (
+        <p className="muted">No source records were included.</p>
+      ) : (
+        <ol className="approved-record-list">
+          {records.map((record, index) => {
+            const id = record && typeof record === 'object' && record.id ? record.id : `record-${index + 1}`;
+            const eventDate = excerptDate(record);
+            const recordedAt = record && typeof record === 'object' ? (record.recordedAt ?? record.recorded_at) : null;
+            return (
+              <li key={id}>
+                <div className="approved-record-meta">
+                  <strong>Source {id}</strong>
+                  <span>{eventDate ? `Event ${formatDateTime(eventDate)}` : 'Event date not recorded'}</span>
+                  {recordedAt && recordedAt !== eventDate ? <span>Recorded {formatDateTime(recordedAt)}</span> : null}
+                </div>
+                <p>{excerptText(record)}</p>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
   );
 }
 
-/**
- * Sender label for a thread bubble. Worker messages carry `worker_name`
- * (server contract); "You" is only shown when that name matches the
- * logged-in worker — messages from other workers (e.g. the previous worker
- * on a rematched case) are shown under their own name. Servers predating
- * the contract omit `worker_name`; those threads only ever contain the
- * claiming worker's own messages, so the "You" fallback stays correct.
- */
-function senderLabel(message, me) {
-  if (message.sender !== 'worker') return 'Student';
-  if (message.worker_name) {
-    return me && message.worker_name === me.name ? 'You' : message.worker_name;
-  }
-  return 'You';
+function Timeline({ events }) {
+  return (
+    <section className="card case-timeline" aria-labelledby="timeline-heading">
+      <h2 id="timeline-heading">Support timeline</h2>
+      {events.length === 0 ? (
+        <p className="muted">No timeline information is available.</p>
+      ) : (
+        <ol className="timeline-list">
+          {events.map((event) => (
+            <li className={`timeline-item timeline-${event.kind}${event.chronologicalNext ? ' chronological-next' : ''}`} key={event.id}>
+              <div className="timeline-date">{eventDateLabel(event)}</div>
+              <span className="timeline-marker" aria-hidden="true" />
+              <div className="timeline-content">
+                <strong>{event.label}</strong>
+                <p>{event.text || 'No text was included.'}</p>
+                {event.kind === 'excerpt' && <span className="badge badge-green">Student-approved excerpt</span>}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
 }
 
-/** Professional case view: summary, deidentified excerpts, and one message thread. */
+function EventMap({ events, topics, selectedId, onSelect, range, onRangeChange, selectedTopic, onTopicChange }) {
+  const visibleEvents = filterMapEvents(events, { topic: selectedTopic, range }, topics);
+  const selectedEvent = visibleEvents.find((event) => event.id === selectedId);
+
+  return (
+    <section className="event-map-layout" aria-labelledby="event-map-heading">
+      <div className="event-map-main">
+        <div className="map-controls card">
+          <label className="map-range-label" htmlFor="event-range">Date range</label>
+          <select id="event-range" value={range} onChange={(event) => onRangeChange(event.target.value)}>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="all">All available dates</option>
+          </select>
+          <div className="topic-filters" role="group" aria-label="Filter by case-level theme">
+            <button className={`filter-chip${selectedTopic ? '' : ' selected'}`} type="button" aria-pressed={!selectedTopic} onClick={() => onTopicChange('')}>All themes</button>
+            {topics.map((topic) => (
+              <button className={`filter-chip${selectedTopic === topic ? ' selected' : ''}`} key={topic} type="button" aria-pressed={selectedTopic === topic} onClick={() => onTopicChange(selectedTopic === topic ? '' : topic)}>{topic}</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="alert alert-info map-explanation">
+          <strong>Exploratory view — not a conclusion.</strong> Items are connected only by their recorded chronological order. Theme matches use explicit excerpt tags or literal, case-insensitive text matches; this does not imply causality or clinical judgment. Themes without excerpt matches remain case-level only.
+        </div>
+        <p className="muted small map-undated-note">Items with no recorded date remain visible and are marked “Date not recorded”; their order is unknown and they are not linked by chronology.</p>
+
+        {topics.length > 0 && <div className="map-theme-row"><span className="muted small">Case-level themes:</span> <TopicChips topics={topics} /></div>}
+        {visibleEvents.length === 0 ? (
+          <EmptyState title="No items match these filters">
+            {selectedTopic ? 'No approved excerpt or message has an explicit tag or literal text match for this theme.' : 'Try a wider date range.'}
+          </EmptyState>
+        ) : (
+          <ol className="event-map-list" aria-label="Case items in recorded chronological order">
+            {visibleEvents.map((event, index) => {
+              const itemTopics = matchingTopics(event, topics);
+              const next = visibleEvents[index + 1];
+              return (
+                <li className="event-map-list-item" key={event.id}>
+                  <button
+                    type="button"
+                    className={`event-map-node${selectedId === event.id ? ' selected' : ''}`}
+                    aria-pressed={selectedId === event.id}
+                    onClick={() => onSelect(selectedId === event.id ? null : event.id)}
+                  >
+                    <span className={`event-kind-icon event-kind-${event.kind}`} aria-hidden="true">{event.kind === 'excerpt' ? '▤' : event.kind === 'message' ? '◌' : '○'}</span>
+                    <span className="event-map-node-body">
+                      <span className="event-map-node-heading"><strong>{event.label}</strong><time>{eventDateLabel(event)}</time></span>
+                      <span className="event-map-text">{event.text || 'No text was included.'}</span>
+                      {itemTopics.length > 0 && <span className="event-map-match">{itemTopics.join(', ')} · explicit tag or literal text match</span>}
+                    </span>
+                  </button>
+                  {event.dateKnown && next?.dateKnown && <div className="chronology-link" aria-label="Next item follows by recorded date"><span aria-hidden="true">↓</span> Next by recorded date only</div>}
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </div>
+
+      <aside className="event-map-aside card" aria-labelledby="event-map-heading">
+        <h2 id="event-map-heading">Event map</h2>
+        <p className="muted">This view brings together approved excerpts and authorized support messages for this case.</p>
+        {topics.length === 0 ? (
+          <p className="muted small">No case-level themes were provided.</p>
+        ) : (
+          <div className="map-legend">
+            <strong>Case-level themes</strong>
+            <p className="muted small">The case has these themes, but the API does not provide event-level assignments unless an excerpt is explicitly tagged or literally mentions the theme.</p>
+            <TopicChips topics={topics} />
+          </div>
+        )}
+        <div className="map-legend">
+          <strong>Recorded chronology</strong>
+          <p className="muted small">Connections mean earlier/later timestamps only. Undated items have no chronological connection.</p>
+        </div>
+        {selectedEvent && (
+          <div className="selected-event" aria-live="polite">
+            <h3>Selected item</h3>
+            <p className="muted small">{selectedEvent.label} · {eventDateLabel(selectedEvent)}</p>
+            <p>{selectedEvent.text || 'No text was included.'}</p>
+          </div>
+        )}
+        {!selectedEvent && <p className="muted small">Select an item to inspect its approved text.</p>}
+      </aside>
+    </section>
+  );
+}
+
 export default function CaseDetail() {
   const { id } = useParams();
   const { worker } = useAuth();
   const [caseData, setCaseData] = useState(null);
   const [messages, setMessages] = useState(null);
+  const [loadedId, setLoadedId] = useState(null);
   const [error, setError] = useState(null);
   const [notVerified, setNotVerified] = useState(false);
-  // Student withdrew the case: per contract the API answers 404
-  // case_not_found, and the detail page must not render any case content.
   const [withdrawn, setWithdrawn] = useState(false);
+  const [accessLost, setAccessLost] = useState(false);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState(null);
-
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const [detail, thread] = await Promise.all([
-        api(`/worker/cases/${id}`),
-        api(`/worker/cases/${id}/messages`),
-      ]);
-      setCaseData(detail.case);
-      setMessages(thread.messages);
-    } catch (err) {
-      if (err.code === 'not_verified') setNotVerified(true);
-      else if (err.code === 'not_your_case')
-        setError('This case is not assigned to you. Claim it from the queue first.');
-      // Withdrawn cases are indistinguishable from never-shared ones by
-      // design (404 case_not_found): show the same no-longer-shared notice.
-      else if (err.code === 'case_not_found') setWithdrawn(true);
-      else setError('Could not load the case. Is the server running?');
-    }
-  }, [id]);
+  const [activeTab, setActiveTab] = useState('timeline');
+  const [reloadKey, setReloadKey] = useState(0);
+  const [range, setRange] = useState('all');
+  const [selectedTopic, setSelectedTopic] = useState('');
+  const [selectedEventId, setSelectedEventId] = useState(null);
+  const requestVersion = useRef(0);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    const controller = new AbortController();
+    const version = ++requestVersion.current;
+    setLoadedId(null);
+    setCaseData(null);
+    setMessages(null);
+    setError(null);
+    setNotVerified(false);
+    setWithdrawn(false);
+    setAccessLost(false);
+    setSendError(null);
+    setText('');
+    setSending(false);
+    setActiveTab('timeline');
+    setSelectedTopic('');
+    setSelectedEventId(null);
 
-  async function send(e) {
-    e.preventDefault();
-    if (!text.trim()) return;
+    Promise.all([
+      api(`/worker/cases/${id}`, { signal: controller.signal }),
+      api(`/worker/cases/${id}/messages`, { signal: controller.signal }),
+    ])
+      .then(([detail, thread]) => {
+        if (version !== requestVersion.current) return;
+        if (detail.case.status === 'withdrawn') {
+          setWithdrawn(true);
+          return;
+        }
+        setCaseData(detail.case);
+        setMessages(thread.messages || []);
+        setLoadedId(id);
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError' || version !== requestVersion.current) return;
+        setCaseData(null);
+        setMessages(null);
+        if (err.code === 'not_verified') setNotVerified(true);
+        else if (err.code === 'case_not_found') setWithdrawn(true);
+        else if (err.code === 'not_your_case') setAccessLost(true);
+        else setError('Could not load this case. Please try again.');
+      });
+
+    return () => controller.abort();
+  }, [id, reloadKey]);
+
+  const retry = useCallback(() => setReloadKey((key) => key + 1), []);
+
+  async function send(event) {
+    event.preventDefault();
+    if (!text.trim() || sending) return;
+    const version = requestVersion.current;
     setSending(true);
     setSendError(null);
     try {
-      const d = await api(`/worker/cases/${id}/respond`, {
+      const result = await api(`/worker/cases/${id}/respond`, {
         method: 'POST',
         body: { text: text.trim() },
       });
-      setCaseData(d.case);
-      // The respond response may not echo worker_name yet; stamp our own
-      // name so the bubble labels as "You" under the new sender rules.
-      const sent =
-        d.message && d.message.sender === 'worker' && !d.message.worker_name && worker
-          ? { ...d.message, worker_name: worker.name }
-          : d.message;
-      setMessages((prev) => [...(prev || []), sent]);
+      if (version !== requestVersion.current) return;
+      setCaseData(result.case);
+      const sent = result.message && result.message.sender === 'worker' && !result.message.worker_name && worker
+        ? { ...result.message, worker_name: worker.name }
+        : result.message;
+      if (sent) setMessages((current) => [...(current || []), sent]);
       setText('');
     } catch (err) {
-      if (err.code === 'invalid_status') {
-        setSendError('This case is not waiting for your response right now.');
-        load();
-      } else if (err.code === 'case_not_found') {
-        // Withdrawn between loading the thread and pressing Send.
+      if (version !== requestVersion.current) return;
+      if (err.code === 'case_not_found') {
+        setCaseData(null);
+        setMessages(null);
+        setLoadedId(null);
         setWithdrawn(true);
+      } else if (err.code === 'not_verified') {
+        setCaseData(null);
+        setMessages(null);
+        setLoadedId(null);
+        setNotVerified(true);
+      } else if (err.code === 'not_your_case') {
+        setCaseData(null);
+        setMessages(null);
+        setLoadedId(null);
+        setAccessLost(true);
+      } else if (err.code === 'invalid_status') {
+        setSendError('This case is not waiting for a response from you. Its latest status will be refreshed.');
+        setCaseData(null);
+        setMessages(null);
+        setLoadedId(null);
+        retry();
+      } else if (err.status === 401) {
+        setCaseData(null);
+        setMessages(null);
+        setLoadedId(null);
       } else {
         setSendError('Could not send the message. Please try again.');
       }
     } finally {
-      setSending(false);
+      if (version === requestVersion.current) setSending(false);
     }
   }
 
   if (notVerified) return <VerificationPending />;
-  // Withdrawn (404 case_not_found) or — on pre-contract servers that still
-  // return 200 — status 'withdrawn': render only the notice, never the
-  // summary, excerpts, thread, or reply box.
-  if (withdrawn || (caseData && caseData.status === 'withdrawn')) {
-    return (
-      <div className="page">
-        <EmptyState title="This summary is no longer shared.">
-          The student has withdrawn this case, so its excerpts and messages
-          are no longer available.
-        </EmptyState>
-        <Link className="btn btn-ghost" to="/cases">
-          Back to my cases
-        </Link>
-      </div>
-    );
+  if (loadedId !== id) {
+    if (withdrawn) {
+      return (
+        <div className="page">
+          <EmptyState title="This summary is no longer available.">It may have been withdrawn or is otherwise no longer shared. No excerpts or messages are displayed.</EmptyState>
+          <Link className="btn btn-ghost" to="/cases">Back to my cases</Link>
+        </div>
+      );
+    }
+    if (accessLost) {
+      return (
+        <div className="page">
+          <EmptyState title="This case is no longer available to you.">No case summary, excerpts, or messages are displayed.</EmptyState>
+          <Link className="btn btn-ghost" to="/cases">Back to my cases</Link>
+        </div>
+      );
+    }
+    if (error) {
+      return (
+        <div className="page">
+          <div className="alert alert-error" role="alert">{error}</div>
+          <button className="btn btn-secondary" onClick={retry}>Try again</button>
+          <Link className="btn btn-ghost" to="/cases">Back to my cases</Link>
+        </div>
+      );
+    }
+    return <p className="muted" role="status">Loading case…</p>;
   }
-  if (error) {
-    return (
-      <div className="page">
-        <div className="alert alert-error">{error}</div>
-        <Link className="btn btn-ghost" to="/cases">
-          Back to my cases
-        </Link>
-      </div>
-    );
-  }
-  if (!caseData || !messages) return <p className="muted">Loading case…</p>;
 
+  if (!caseData || !messages || caseData.status === 'withdrawn') {
+    return (
+      <div className="page">
+        <EmptyState title="This summary is no longer available.">It may have been withdrawn or is otherwise no longer shared. No excerpts or messages are displayed.</EmptyState>
+        <Link className="btn btn-ghost" to="/cases">Back to my cases</Link>
+      </div>
+    );
+  }
+
+  const topics = Array.isArray(caseData.topics) ? caseData.topics : [];
+  const events = buildTimelineEvents(caseData, messages);
   const canRespond = caseData.status === 'claimed' || caseData.status === 'continued';
+  const tabs = [
+    { id: 'timeline', label: 'Timeline' },
+    { id: 'records', label: 'Authorized records' },
+    { id: 'map', label: 'Event map' },
+    { id: 'messages', label: 'Messages' },
+  ];
+
+  function handleTabKeyDown(event, currentId) {
+    const currentIndex = tabs.findIndex((tab) => tab.id === currentId);
+    let nextIndex = currentIndex;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    const nextTab = tabs[nextIndex];
+    setActiveTab(nextTab.id);
+    document.getElementById(`tab-${nextTab.id}`)?.focus();
+  }
 
   return (
-    <div className="page">
-      <div className="page-head">
-        <h1>Case</h1>
-        <Link className="btn btn-ghost" to="/cases">
-          Back to my cases
-        </Link>
+    <div className="page case-detail-page">
+      <div className="page-head case-detail-heading">
+        <div>
+          <h1>{caseData.period || 'Case details'}</h1>
+          <div className="chip-row"><StatusChip status={caseData.status} /><LanguageChip language={caseData.language} /><TopicChips topics={topics} /></div>
+        </div>
+        <Link className="btn btn-ghost" to="/cases">Back to my cases</Link>
       </div>
 
-      <section className="card">
-        <div className="case-card-head">
-          <span className="case-period">{caseData.period || 'Period unknown'}</span>
-          <span className="chip-row">
-            <StatusChip status={caseData.status} />
-            <LanguageChip language={caseData.language} />
-          </span>
-        </div>
-        <TopicChips topics={caseData.topics} />
+      <div className="alert alert-info privacy-summary"><strong>Student-approved, de-identified summary.</strong> The student may withdraw sharing at any time. If access is withdrawn, this view is removed.</div>
+      {caseData.period?.startsWith('Fictional student demo') && <div className="alert alert-info"><strong>Fictional teaching case.</strong> All diary records and messages are simulated; no real student data, original audio, or transcript is present.</div>}
 
-        <dl className="summary-grid">
-          <div>
-            <dt>Main concerns</dt>
-            <dd>{caseData.main_concerns || '—'}</dd>
-          </div>
-          <div>
-            <dt>Recent change</dt>
-            <dd>{caseData.recent_change || '—'}</dd>
-          </div>
-          <div>
-            <dt>Queued</dt>
-            <dd>{formatDateTime(caseData.created_at)}</dd>
-          </div>
-          <div>
-            <dt>Claimed</dt>
-            <dd>{formatDateTime(caseData.claimed_at)}</dd>
-          </div>
-          <div>
-            <dt>First response sent</dt>
-            <dd>{formatDateTime(caseData.responded_at)}</dd>
-          </div>
+      <section className="card case-context" aria-label="Case context">
+        <div>
+          <h2>Main concern</h2>
+          <p>{caseData.main_concerns || 'No main concern was provided.'}</p>
+        </div>
+        <div>
+          <h2>Recent change</h2>
+          <p>{caseData.recent_change || 'No recent change was provided.'}</p>
+        </div>
+        <dl className="summary-grid case-meta-grid">
+          <div><dt>Case shared</dt><dd>{formatDateTime(caseData.created_at)}</dd></div>
+          <div><dt>Case claimed</dt><dd>{formatDateTime(caseData.claimed_at)}</dd></div>
+          <div><dt>First response</dt><dd>{formatDateTime(caseData.responded_at)}</dd></div>
         </dl>
       </section>
 
-      <section className="card">
-        <h2>Excerpts</h2>
-        <p className="muted small">
-          These excerpts are deidentified student text, shared only because the
-          student explicitly authorised the cloud organisation. Original
-          recordings and transcripts never leave the student's device.
-        </p>
-        {!caseData.excerpts || caseData.excerpts.length === 0 ? (
-          <p className="muted">No excerpts were shared for this case.</p>
-        ) : (
-          caseData.excerpts.map((ex, i) => <Excerpt key={i} excerpt={ex} index={i} />)
-        )}
-      </section>
+      <div className="case-tabs" role="tablist" aria-label="Case information">
+        {tabs.map((tab) => (
+          <button key={tab.id} id={`tab-${tab.id}`} type="button" role="tab" tabIndex={activeTab === tab.id ? 0 : -1} aria-selected={activeTab === tab.id} aria-controls="case-tab-panel" onKeyDown={(event) => handleTabKeyDown(event, tab.id)} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>
+        ))}
+      </div>
 
-      <section className="card conversation">
-        <h2>Messages</h2>
-        {messages.length === 0 ? (
-          <p className="muted">No messages yet. Your first response will appear here.</p>
-        ) : (
-          <ul className="thread">
-            {messages.map((m) => (
-              <li key={m.id} className={`bubble bubble-${m.sender}`}>
-                <div className="bubble-meta">
-                  {senderLabel(m, worker)} · {formatDateTime(m.created_at)}
-                </div>
-                <div className="bubble-text">{m.text}</div>
-              </li>
-            ))}
-          </ul>
-        )}
-        <form className="composer" onSubmit={send}>
-          {!canRespond && (
-            <p className="muted small">
-              You can send a message while the case is awaiting your response
-              (status: {caseData.status}).
-            </p>
-          )}
-          {sendError && <div className="alert alert-error">{sendError}</div>}
-          <textarea
-            className="respond-box"
-            rows={4}
-            placeholder="Write a brief, supportive response…"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            disabled={!canRespond || sending}
+      <div id="case-tab-panel" role="tabpanel" aria-labelledby={`tab-${activeTab}`} className="case-tab-panel">
+        {activeTab === 'timeline' && <Timeline events={events} />}
+        {activeTab === 'records' && <ApprovedRecords excerpts={caseData.excerpts} />}
+        {activeTab === 'map' && (
+          <EventMap
+            events={events}
+            topics={topics}
+            selectedId={selectedEventId}
+            onSelect={setSelectedEventId}
+            range={range}
+            onRangeChange={(value) => { setRange(value); setSelectedEventId(null); }}
+            selectedTopic={selectedTopic}
+            onTopicChange={(value) => { setSelectedTopic(value); setSelectedEventId(null); }}
           />
-          <button
-            className="btn btn-primary"
-            type="submit"
-            disabled={!canRespond || sending || !text.trim()}
-          >
-            {sending ? 'Sending…' : 'Send'}
-          </button>
-        </form>
-      </section>
+        )}
+        {activeTab === 'messages' && (
+          <section className="card conversation" aria-labelledby="messages-heading">
+            <h2 id="messages-heading">Authorized case messages</h2>
+            <p className="muted small">Messages shown here are available only while this case remains assigned to you and shared by the student.</p>
+            {messages.length === 0 ? (
+              <p className="muted">No messages yet. Your first response will appear here.</p>
+            ) : (
+              <ul className="thread">
+                {messages.map((message, index) => (
+                  <li key={message.id ?? `message-${index}`} className={`bubble bubble-${message.sender}`}>
+                    <div className="bubble-meta">{senderLabel(message, worker)} · {formatDateTime(message.created_at)}</div>
+                    <div className="bubble-text">{message.text}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <form className="composer" onSubmit={send}>
+              {!canRespond && <p className="muted small">Your response has been sent. You can reply again when the student continues the conversation.</p>}
+              {sendError && <div className="alert alert-error" role="alert">{sendError}</div>}
+              <label className="field" htmlFor="case-response"><span>Your supportive reply</span></label>
+              <textarea id="case-response" className="respond-box" rows={4} maxLength={1000} placeholder="Write a brief, supportive response…" value={text} onChange={(event) => setText(event.target.value)} disabled={!canRespond || sending} />
+              <span className="muted small">{text.length}/1000 characters</span>
+              <button className="btn btn-primary" type="submit" disabled={!canRespond || sending || !text.trim()}>{sending ? 'Sending…' : 'Send reply'}</button>
+            </form>
+          </section>
+        )}
+      </div>
     </div>
   );
 }

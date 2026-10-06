@@ -1,6 +1,7 @@
-import { useLocalSearchParams } from 'expo-router';
+import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
+import { StudentNav } from '../src/components/studentNav';
 import { Back, Button, ButtonRow, Card, Field, Notice, Screen, T } from '../src/components/ui';
 import { formatDay } from '../src/lib/dates';
 import { useStore } from '../src/store';
@@ -36,7 +37,7 @@ export default function CaseScreen() {
   const item = store.cases.find((entry) => entry.id === id) ?? store.openCase;
   const [text, setText] = useState('');
   const messages = item ? store.messagesFor(item.id) : [];
-  const remote = Boolean(item?.remote && store.cloudOrg && store.deviceToken);
+  const remote = Boolean(item?.remote && store.deviceToken && (store.cloudOrg || store.isDemo));
 
   // Live status/messages from the server while a remote case is open.
   useEffect(() => {
@@ -51,11 +52,15 @@ export default function CaseScreen() {
     if (item && !item.seenReply) store.markReplySeen(item.id);
   }, [item, store]);
 
+  if (!store.ready) return <Screen footer={<StudentNav active="shared" />}><View /></Screen>;
+  if (!store.onboarded) return <Redirect href="/onboarding" />;
+
   if (!item || item.status === 'withdrawn') {
     return (
-      <Screen scroll>
+      <Screen scroll footer={<StudentNav active="shared" />}>
         <Back label="Home" href="/" />
-        <T weight="extrabold" size={30}>Nothing is shared right now.</T>
+        <T weight="extrabold" size={30}>Shared summary</T>
+        <T size={17} weight="semibold" style={{ marginTop: 16 }}>Nothing is shared right now.</T>
         <T size={16} color={colors.muted} style={{ marginTop: 8 }}>
           You can keep recording privately.
         </T>
@@ -86,15 +91,17 @@ export default function CaseScreen() {
       scroll
       keyboard
       footer={
-        item.status === 'continued' ? (
-          <Button label="Send" onPress={() => { store.sendMessage(item.id, 'student', text); setText(''); }} disabled={text.trim().length === 0} />
-        ) : null
+        <View style={{ gap: 10 }}>
+          {item.status === 'continued' ? (
+            <Button label="Send" onPress={() => { store.sendMessage(item.id, 'student', text); setText(''); }} disabled={text.trim().length === 0} />
+          ) : null}
+          <StudentNav active="shared" />
+        </View>
       }
     >
       <Back label="Home" href="/" />
-      <T weight="extrabold" size={30} style={{ marginTop: 8 }}>
-        {heading}
-      </T>
+      <T weight="extrabold" size={30} style={{ marginTop: 8 }}>Shared summary</T>
+      <T weight="bold" size={20} style={{ marginTop: 12 }}>{heading}</T>
       <T size={15} color={colors.muted} style={{ marginTop: 8, marginBottom: 16 }}>
         {subline}
       </T>

@@ -35,7 +35,7 @@ export class ApiError extends Error {
  * On 401 the token is cleared and the app is sent back to /login
  * (except for the auth endpoints themselves, where 401 means bad credentials).
  */
-export async function api(path, { method = 'GET', body } = {}) {
+export async function api(path, { method = 'GET', body, signal } = {}) {
   const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const token = getToken();
@@ -45,6 +45,7 @@ export async function api(path, { method = 'GET', body } = {}) {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal,
   });
 
   let data = null;

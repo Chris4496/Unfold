@@ -6,6 +6,7 @@ import { workersRouter } from './routes/workers.js';
 import { devicesRouter } from './routes/devices.js';
 import { workerRouter } from './routes-worker.js';
 import { studentRouter } from './routes-student.js';
+import { demoRouter } from './routes/demo.js';
 import { startSweeper } from './sweeper.js';
 
 /**
@@ -39,6 +40,11 @@ export function createApp({ db, config = defaultConfig } = {}) {
   app.use('/api/workers', workersRouter(db, config));
   app.use('/api/worker', workerRouter(db, config));
   app.use('/api/devices', devicesRouter(db));
+  if (config.demoMode) {
+    app.use('/api/demo', demoRouter(db));
+  } else {
+    app.use('/api/demo', (_req, res) => res.status(404).json({ error: 'not_found' }));
+  }
   app.use('/api', studentRouter(db, config));
 
   // 404 for unknown API routes

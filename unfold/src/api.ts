@@ -138,6 +138,24 @@ export function registerDevice(installId: string): Promise<DeviceRegistration> {
   return request<DeviceRegistration>('/api/devices/register', { method: 'POST', body: { installId } });
 }
 
+export type FictionalDemoSession = {
+  deviceToken: string;
+  persona: { name: string; context: string };
+  entries: { id: string; createdAt: string; eventAt: string; transcript: string; deidentified: string; tokens: TokenKind[] }[];
+  case: {
+    id: string;
+    createdAt: string;
+    status: CaseStatus;
+    claimCount: number;
+    summary: Draft;
+  };
+};
+
+/** Retrieve only the dedicated fictional case/history from an opted-in local demo server. */
+export function getFictionalDemoSession(): Promise<FictionalDemoSession> {
+  return request<FictionalDemoSession>('/api/demo/session');
+}
+
 export function setCloudConsent(
   token: string,
   cloudOrg: boolean,

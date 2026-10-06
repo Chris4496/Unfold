@@ -37,7 +37,7 @@ export default function SettingsScreen() {
           <Switch
             accessibilityLabel="Cloud organisation"
             value={store.cloudOrg}
-            disabled={cloudBusy}
+            disabled={cloudBusy || store.isDemo}
             onValueChange={(value) => void toggleCloud(value)}
             trackColor={{ false: '#D5E3DE', true: colors.teal }}
             thumbColor={colors.white}
@@ -63,6 +63,11 @@ export default function SettingsScreen() {
           This is separate from ElevenLabs transcription (which only turns recordings into text) and separate from
           sharing a summary with a social worker. You choose each one on its own, and you can turn this off at any time.
         </T>
+        {store.isDemo ? (
+          <T size={14} color={colors.muted} style={{ marginTop: 8 }}>
+            This isolated fictional session does not sync notes. Cloud organisation is unavailable here; exiting restores your personal settings unchanged.
+          </T>
+        ) : null}
         {cloudError ? (
           <T size={14} weight="semibold" color={colors.teal} style={{ marginTop: 8 }}>
             The server could not be reached. The setting was not changed.
@@ -71,12 +76,10 @@ export default function SettingsScreen() {
       </View>
 
       <Button
-        label="Load a sample week"
-        onPress={() => {
-          store.loadSamples();
-          router.replace('/diary');
-        }}
+        label={store.demoLoading ? 'Opening fictional demo…' : 'Open Maya’s complete fictional student demo'}
+        onPress={() => { void store.enterDemo().then((entered) => { if (entered) router.replace('/diary'); }); }}
       />
+      {store.demoError ? <T size={14} color={colors.teal} style={{ marginTop: 8 }}>{store.demoError}</T> : null}
       <View style={{ height: 12 }} />
       {confirm ? (
         <View style={{ gap: 10 }}>

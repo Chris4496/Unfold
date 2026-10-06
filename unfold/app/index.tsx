@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { getAnalysis } from '../src/api';
 import { CalendarIcon, RecordButton, SearchIcon } from '../src/components/art';
+import { StudentNav } from '../src/components/studentNav';
 import { Button, ButtonRow, LockPill, Notice, QuietButton, Screen, T } from '../src/components/ui';
 import { shouldOfferSupport } from '../src/lib/organise';
 import { clearRecording, stageRecording } from '../src/recordingDraft';
@@ -81,13 +82,14 @@ export default function HomeScreen() {
   }
 
   const unseen = store.openCase && !store.openCase.seenReply && store.openCase.status === 'replied';
+
   // Server analysis wins when available; otherwise the local pattern rule.
   // Snooze and open-case guards always apply (mirrors store.shouldPrompt).
   const approaching = store.cloudOrg && cloudApproaching !== null ? cloudApproaching : shouldOfferSupport(store.entries);
   const prompt = approaching && store.entries.length >= store.snoozeUntilCount && store.openCase == null;
 
   return (
-    <Screen decor>
+    <Screen decor footer={<StudentNav active="record" />}>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 8 }}>
           <Pressable accessibilityRole="button" accessibilityLabel="Open diary" onPress={() => router.push('/diary')} style={iconHit}>
@@ -118,14 +120,6 @@ export default function HomeScreen() {
                   router.push('/write');
                 }}
               />
-              {store.entries.length > 0 ? (
-                <QuietButton label={`${store.entries.length} ${store.entries.length === 1 ? 'note' : 'notes'} on this phone`} onPress={() => router.push('/diary')} />
-              ) : (
-                <QuietButton label="Preview a sample week" onPress={() => { store.loadSamples(); router.push('/diary'); }} />
-              )}
-              {store.openCase && !unseen ? (
-                <QuietButton label="View shared summary" onPress={() => router.push({ pathname: '/case', params: { id: store.openCase!.id } })} />
-              ) : null}
               {unseen && store.openCase ? (
                 <Notice title="A social worker replied" body="You can read it and choose whether to continue.">
                   <Button label="Read the reply" onPress={() => router.push({ pathname: '/case', params: { id: store.openCase!.id } })} />

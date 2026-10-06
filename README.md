@@ -21,9 +21,15 @@ A private voice diary for students. Record on your phone, then decide whether a 
 **Social-worker console (`unfold/worker-web/`)**
 
 - Register and log in; unverified workers are gated until verified
-- Claim cases from a language/expertise-matched queue
-- Read de-identified summaries and reply to students
+- Dashboard, matched case queue, and active-case overview
+- Explore authorized cases through a support timeline, event map, and messages
+- Claim cases from a language/expertise-matched queue; reply to students
 - Withdrawn cases are hidden (indistinguishable from never-shared)
+
+**Dashboard views**
+
+- Student: weekly Dashboard, notes graph, and diary timeline use locally stored entries; graph links indicate shared topics only.
+- Social worker: Dashboard, case timeline, and event map use existing APIs and student-approved, de-identified case data; no original recordings or transcripts are exposed.
 
 **Server (`unfold/server/`)**
 
@@ -60,7 +66,15 @@ Requires **Node.js 20 or newer**. To start the API server, worker console and st
 ./start-all.sh
 ```
 
-The script creates local env files if needed, seeds demo accounts, and starts all three services. Press Ctrl-C to stop them. Its default ports (8787, 5173 and 8081) must be free. For manual setup, use the steps below.
+The script creates local env files if needed, seeds demo accounts, and starts all three services. It runs the fictional student walkthrough in the dedicated `unfold/server/unfold-local-demo.db` database with the demo-only server flag enabled; the normal server database and personal student storage are not used for demo bootstrap. Press Ctrl-C to stop them. Its default ports (8787, 5173 and 8081) must be free. For manual setup, use the steps below.
+
+### Complete fictional student walkthrough
+
+In Settings, choose **Open Maya’s complete fictional student demo**. It loads 18 simulated diary records covering three weeks, plus the same student's already-continued support case and message history. Calendar, diary, Dashboard, timeline, graph and Ask use the isolated demo notes. The notes are text-only and fictional; no audio or original transcript is represented. If the demo service is unavailable or not enabled, the app reports that it could not connect and leaves personal data unchanged.
+
+A persistent demo banner links to the shared case and worker console. When started through `./start-all.sh`, the local development worker console at <http://localhost:5173> automatically opens as the seeded `demo.worker@unfold.local` account; open **My cases** and choose **Fictional student demo · three-week history**. **Authorized records** shows the full student-approved text for all 18 matching source IDs and dates, alongside the case timeline/map and the same conversation. The demo account/case is local-only and uses the ordinary assigned-worker and withdrawal checks.
+
+Choose **Exit demo** in the student banner to return to the prior personal diary and settings. Reopening the demo reuses its separate local storage and server case; it does not duplicate or reset messages. Demo notes never sync through cloud organisation, and exiting does not alter the ordinary cloud-consent setting. The `/api/demo/session` endpoint is mounted only when `DEMO_MODE=1`; `./start-all.sh` is the supported local configuration.
 
 ### 1. Start the server
 
@@ -120,5 +134,6 @@ Recordings are sent to ElevenLabs for transcription; audio and transcripts remai
 
 ## Tests
 
-- Client: `cd unfold && npm test` — 29 tests covering de-identification, classification, prompt rules, transcription and the API client.
-- Server: `cd unfold/server && npm test` — 91 tests covering auth, consent, entry sync, cloud-data purge, case withdrawal, GenAI fallbacks, the worker queue and case transitions.
+- Student app: `cd unfold && npm test && npm run typecheck` — tests and TypeScript check.
+- Worker console: `cd unfold/worker-web && npm test && npm run build` — view-model tests and production build.
+- Server regression: `cd unfold/server && npm test` — auth, consent, entry sync, cloud-data purge, case withdrawal, GenAI fallbacks, queue and case transitions.
