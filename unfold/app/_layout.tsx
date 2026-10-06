@@ -12,7 +12,6 @@ import { useEffect } from 'react';
 import { Platform, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { FontProvider } from '../src/components/ui';
-import { DemoContext } from '../src/components/demoContext';
 import { StoreProvider } from '../src/store';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -93,7 +92,6 @@ export default function RootLayout() {
           <StoreProvider>
             <StatusBar style="dark" />
             <View style={{ flex: 1, backgroundColor: '#E7F1EE' }}>
-              <DemoContext />
               <Stack
                 screenOptions={{
                   headerShown: false,

@@ -2,7 +2,7 @@ import { Redirect, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, View, useWindowDimensions } from 'react-native';
 import Svg, { Circle, G, Line, Text as SvgText } from 'react-native-svg';
-import { StudentNav } from '../src/components/studentNav';
+import { GraphNode } from '../src/components/graphNode';
 import { Button, Screen, T } from '../src/components/ui';
 import { dayKey, entryWhen, formatDay } from '../src/lib/dates';
 import { entriesInDateRange, TOPIC_LABELS, topicsInEntries, type StudentDateRange } from '../src/lib/studentViews';
@@ -121,7 +121,7 @@ export default function GraphScreen() {
   );
 
   return (
-    <Screen wide scroll footer={<StudentNav active="dashboard" />}>
+    <Screen wide scroll>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <View style={{ flex: 1, minWidth: 210 }}>
           <T weight="extrabold" size={28}>Your notes graph</T>
@@ -145,17 +145,17 @@ export default function GraphScreen() {
                   return target ? [<Line key={`${entry.id}-${topic}`} x1={target.x} y1={target.y + 47} x2={noteX} y2={noteY - 17} stroke={colors.mintDeep} strokeWidth={1.5} />] : [];
                 }))}
                 {topicPositions.map(({ topic, x, y }) => (
-                  <G key={topic} onPress={() => setSelectedTopic(selectedTopic === topic ? null : topic)} accessibilityRole="button" accessibilityLabel={`Topic ${TOPIC_LABELS[topic]}, filter notes`}>
+                  <GraphNode key={topic} onPress={() => setSelectedTopic(selectedTopic === topic ? null : topic)} label={`Topic ${TOPIC_LABELS[topic]}, filter notes`}>
                     <Circle cx={x} cy={y} r={selectedTopic === topic ? 25 : 21} fill={colors.teal} stroke={selectedTopic === topic ? colors.tealDark : colors.teal} strokeWidth={selectedTopic === topic ? 4 : 1} />
                     <SvgText x={x} y={y + 39} textAnchor="middle" fontSize={12} fontWeight="600" fill={colors.navy}>{TOPIC_LABELS[topic]}</SvgText>
-                  </G>
+                  </GraphNode>
                 ))}
                 {notePositions.map(({ entry, x, y }) => (
-                  <G key={entry.id} onPress={() => { setSelectedEntryId(entry.id); setSelectedTopic(null); }} accessibilityRole="button" accessibilityLabel={`Note ${formatDay(entryWhen(entry))}: ${clip(entry.transcript, 90)}`}>
+                  <GraphNode key={entry.id} onPress={() => { setSelectedEntryId(entry.id); setSelectedTopic(null); }} label={`Note ${formatDay(entryWhen(entry))}: ${clip(entry.transcript, 90)}`}>
                     <SvgText x={x} y={y - 22} textAnchor="middle" fontSize={10} fill={colors.muted}>{shortDate(entry)}</SvgText>
                     <Circle cx={x} cy={y} r={selectedEntry?.id === entry.id && !selectedTopic ? 15 : 12} fill={colors.muted} stroke={selectedEntry?.id === entry.id && !selectedTopic ? colors.teal : colors.white} strokeWidth={selectedEntry?.id === entry.id && !selectedTopic ? 3 : 1} />
                     <SvgText x={x} y={y + 29} textAnchor="middle" fontSize={9} fill={colors.navy}>{clip(entry.transcript, columns === 2 ? 20 : 15)}</SvgText>
-                  </G>
+                  </GraphNode>
                 ))}
               </G>
             </Svg>
