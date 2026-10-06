@@ -29,6 +29,11 @@ export function FontProvider({ fonts, children }: { fonts: AppFonts; children: R
   return <FontContext.Provider value={fonts}>{children}</FontContext.Provider>;
 }
 
+/** The loaded app font families, for text drawn outside `T` (such as SVG labels). */
+export function useAppFonts(): AppFonts {
+  return useContext(FontContext);
+}
+
 type Weight = keyof AppFonts;
 
 export function T({

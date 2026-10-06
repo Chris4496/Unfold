@@ -58,18 +58,29 @@ function TabIcon({ id, color, size = 24 }: { id: StudentNavTab; color: string; s
   );
 }
 
-export function StudentNav({ active }: { active: StudentNavTab }) {
+export function StudentNav({
+  active,
+  compact = false,
+}: {
+  active: StudentNavTab;
+  /** A short, narrow bar for landscape screens where vertical space is scarce. */
+  compact?: boolean;
+}) {
   const router = useRouter();
+  const tabSize = compact ? 34 : 44;
+  const recordSize = compact ? 42 : 72;
+  const inset = compact ? 5 : 8;
   return (
     <View
       accessibilityLabel="Student navigation"
       style={{
         flexDirection: 'row',
         justifyContent: 'space-between',
-        paddingVertical: 6,
+        paddingVertical: inset - 2,
         // Matches the vertical inset so the end circles sit concentric with the bar's rounded caps.
-        paddingHorizontal: 8,
+        paddingHorizontal: inset,
         borderRadius: 30,
+        ...(compact ? { alignSelf: 'center', width: '100%', maxWidth: 300 } : null),
         boxShadow: '0 10px 30px rgba(23, 48, 71, 0.14)',
       }}
     >
@@ -99,8 +110,8 @@ export function StudentNav({ active }: { active: StudentNavTab }) {
             accessibilityState={{ selected }}
             onPress={() => router.replace(tab.route)}
             style={({ pressed }) => ({
-              width: record ? 72 : 44,
-              height: 48,
+              width: record ? recordSize : tabSize,
+              height: tabSize + 4,
               alignItems: 'center',
               justifyContent: 'center',
               opacity: pressed ? 0.6 : 1,
@@ -109,31 +120,32 @@ export function StudentNav({ active }: { active: StudentNavTab }) {
             {record ? (
               <View
                 style={{
-                  width: 72,
-                  height: 72,
+                  width: recordSize,
+                  height: recordSize,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  borderRadius: 36,
-                  borderWidth: 4,
+                  borderRadius: recordSize / 2,
+                  // The compact button stays inside the bar, so it needs no ring or lift.
+                  borderWidth: compact ? 0 : 4,
                   borderColor: 'rgba(255, 255, 255, 0.8)',
                   backgroundColor: selected ? colors.tealDark : colors.teal,
-                  transform: [{ translateY: -6 }],
+                  transform: [{ translateY: compact ? 0 : -6 }],
                 }}
               >
-                <TabIcon id={tab.id} color={colors.white} size={32} />
+                <TabIcon id={tab.id} color={colors.white} size={compact ? 22 : 32} />
               </View>
             ) : (
               <View
                 style={{
-                  width: 44,
-                  height: 44,
+                  width: tabSize,
+                  height: tabSize,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  borderRadius: 22,
+                  borderRadius: tabSize / 2,
                   backgroundColor: selected ? 'rgba(27, 122, 104, 0.16)' : 'transparent',
                 }}
               >
-                <TabIcon id={tab.id} color={selected ? colors.tealDark : colors.muted} />
+                <TabIcon id={tab.id} color={selected ? colors.tealDark : colors.muted} size={compact ? 20 : 24} />
               </View>
             )}
           </Pressable>
