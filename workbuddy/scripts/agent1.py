@@ -4,6 +4,7 @@
 No model calls, product execution, role dispatch, approval or network access.
 """
 import argparse
+from datetime import datetime
 import hashlib
 import json
 import os
@@ -11,9 +12,9 @@ from pathlib import Path
 import subprocess
 
 TEXT_SUFFIXES = {'.md', '.txt', '.json', '.js', '.jsx', '.ts', '.tsx', '.py', '.html', '.css', '.scss', '.toml', '.yaml', '.yml', '.vue', '.svelte', '.swift', '.go', '.rs', '.java', '.kt'}
-IGNORED_DIRS = {'node_modules', 'vendor', 'dist', 'build', 'coverage', 'test-runs', 'tests', '__tests__', '__pycache__', 'software-journey-evaluator', 'env', 'venv'}
+IGNORED_DIRS = {'node_modules', 'vendor', 'dist', 'build', 'coverage', 'archive', 'workbuddy', 'test-runs', 'tests', '__tests__', '__pycache__', 'software-journey-evaluator', 'env', 'venv'}
 CARD_FIELDS = {'background', 'digital_familiarity', 'privacy_attitude', 'synthetic_material', 'basic_product_info', 'starting_context', 'open_goal'}
-REQUIRED_REPORT = {'schema_version', 'report_version', 'product', 'sources', 'journeys', 'personas', 'research_questions', 'assumptions', 'limitations', 'approval'}
+REQUIRED_REPORT = {'schema_version', 'report_version', 'product', 'sources', 'journeys', 'user_agent_count', 'personas', 'research_questions', 'assumptions', 'limitations', 'approval'}
 
 
 def is_text(value):
@@ -97,8 +98,8 @@ def validate_report(report):
     missing = REQUIRED_REPORT - report.keys()
     if missing:
         errors.append('缺少報告欄位：' + ', '.join(sorted(missing)))
-    if type(report.get('schema_version')) is not int or report.get('schema_version') != 1:
-        errors.append('schema_version 必須為 1。')
+    if type(report.get('schema_version')) is not int or report.get('schema_version') != 2:
+        errors.append('新提案 schema_version 必須為 2；歷史報告不改寫。')
     if not is_text(report.get('report_version')):
         errors.append('請指定報告版本。')
     product = report.get('product')
@@ -113,6 +114,9 @@ def validate_report(report):
                 errors.append(f'來源 {index} 需有 path、claim 與合法 kind。')
     role_ids = set()
     personas = report.get('personas')
+    count = report.get('user_agent_count')
+    if type(count) is not int or count <= 0 or not isinstance(personas, list) or count != len(personas):
+        errors.append('user_agent_count 必須是正整數，等於 Persona 人數，不含分析／審核 agents。')
     if not isinstance(personas, list) or not personas:
         errors.append('至少提出一張 Persona。')
     else:
@@ -158,6 +162,104 @@ def validate_report(report):
     return errors
 
 
+def validate_start(report, plan, decisions):
+    """Check declared decisions, never authenticate human messages or start agents."""
+    errors = validate_report(report)
+    if not isinstance(plan, dict) or not isinstance(decisions, dict):
+        return errors + ['執行方案與人類決定必須是 JSON object。']
+    if not isinstance(report, dict):
+        return errors
+    if type(plan.get('schema_version')) is not int or plan.get('schema_version') != 1:
+        errors.append('執行方案 schema_version 必須為 1。')
+    if not is_text(plan.get('plan_version')):
+        errors.append('執行方案必須指定版本。')
+    if plan.get('report_version') != report.get('report_version') or decisions.get('report_version') != report.get('report_version') or decisions.get('plan_version') != plan.get('plan_version'):
+        errors.append('角色方案、執行方案與人類決定版本必須一致。')
+    for key in ['persona_confirmation', 'execution_confirmation']:
+        confirmation = decisions.get(key)
+        if not isinstance(confirmation, dict) or confirmation.get('status') != 'confirmed' or not all(is_text(confirmation.get(field)) for field in ['message', 'source_ref', 'timestamp']):
+            errors.append(f'{key} 缺少明確確認、原文、來源或時間。')
+            continue
+        try:
+            timestamp = datetime.fromisoformat(confirmation['timestamp'].replace('Z', '+00:00'))
+            if timestamp.utcoffset() is None:
+                raise ValueError('missing timezone')
+        except ValueError:
+            errors.append(f'{key} 的時間必須是帶時區 ISO 格式。')
+    personas = report.get('personas')
+    role_ids = {p['id'] for p in personas if isinstance(p, dict) and is_text(p.get('id'))} if isinstance(personas, list) else set()
+    constraints = plan.get('constraints')
+    constraint_options = {}
+    if not isinstance(constraints, list):
+        errors.append('constraints 必須是陣列，無限制可為空。')
+        constraints = []
+    for index, constraint in enumerate(constraints, 1):
+        if not isinstance(constraint, dict):
+            errors.append(f'限制 {index} 必須是 object。')
+            continue
+        cid = constraint.get('id')
+        if not is_text(cid) or cid in constraint_options:
+            errors.append(f'限制 {index} ID 不可空白或重複。')
+            continue
+        constraint_options[cid] = {}
+        kind = constraint.get('type')
+        if not is_text(kind) or kind not in {'environment', 'agent', 'excluded_scope', 'substitution'} or not is_text(constraint.get('summary')):
+            errors.append(f'限制 {cid} 需有分類與摘要。')
+        affected = constraint.get('affected_roles')
+        if not is_text_list(affected, nonempty=True) or not set(affected).issubset(role_ids):
+            errors.append(f'限制 {cid} 必須指向存在的受影響角色。')
+        options = constraint.get('options')
+        if not isinstance(options, list) or not options:
+            errors.append(f'限制 {cid} 必須有處理選項。')
+            continue
+        for option in options:
+            if not isinstance(option, dict) or not all(is_text(option.get(field)) for field in ['id', 'label', 'method', 'evidence_boundary']) or type(option.get('can_start')) is not bool:
+                errors.append(f'限制 {cid} 的選項需有 ID、名稱、方法、結論邊界及 can_start。')
+                continue
+            if option['id'] in constraint_options[cid]:
+                errors.append(f'限制 {cid} 的選項 ID 重複。')
+            constraint_options[cid][option['id']] = option['can_start']
+    checks = plan.get('checks')
+    referenced = set()
+    if not isinstance(checks, list) or not checks:
+        errors.append('至少記錄一項實際執行準備核對。')
+        checks = []
+    for index, check in enumerate(checks, 1):
+        if not isinstance(check, dict):
+            errors.append(f'核對 {index} 必須是 object。')
+            continue
+        status = check.get('status')
+        if not all(is_text(check.get(field)) for field in ['area', 'detail', 'status']) or status not in {'ready', 'limited', 'blocked'}:
+            errors.append(f'核對 {index} 的範圍、說明或狀態缺漏。')
+            continue
+        refs = check.get('constraint_ids', [])
+        if not is_text_list(refs, nonempty=status != 'ready') or not set(refs).issubset(constraint_options):
+            errors.append(f'核對 {index} 的受限狀態需引用已列出的限制。')
+        else:
+            referenced.update(refs)
+    if set(constraint_options) - referenced:
+        errors.append('每項限制／替代操作必須連到準備核對紀錄。')
+    choices = decisions.get('constraint_choices')
+    selected = set()
+    if not isinstance(choices, list):
+        errors.append('constraint_choices 必須是陣列，無限制可為空。')
+        choices = []
+    for choice in choices:
+        if not isinstance(choice, dict) or not is_text(choice.get('constraint_id')) or not is_text(choice.get('option_id')):
+            errors.append('每個限制決定需有 constraint_id 與 option_id。')
+            continue
+        cid, oid = choice['constraint_id'], choice['option_id']
+        if cid in selected or cid not in constraint_options or oid not in constraint_options[cid]:
+            errors.append('限制決定重複或引用不存在的限制／選項。')
+            continue
+        selected.add(cid)
+        if not constraint_options[cid][oid]:
+            errors.append(f'限制 {cid} 的選擇是先處理／暫停，不能啟動角色。')
+    if selected != set(constraint_options):
+        errors.append('每項限制與替代操作都必須有用戶選擇，不能默認忽略。')
+    return errors
+
+
 def positive_int(value):
     number = int(value)
     if number <= 0:
@@ -176,6 +278,10 @@ def main(argv=None):
     prepare.add_argument('--max-total-bytes', type=positive_int, default=500000)
     check = commands.add_parser('validate-report', help='只讀檢查 Agent 1 的分析與 Persona 提案。')
     check.add_argument('report', type=Path)
+    start = commands.add_parser('validate-start', help='只讀檢查兩關紀錄與限制決定；不證明真實批准、不啟動角色。')
+    start.add_argument('report', type=Path)
+    start.add_argument('plan', type=Path)
+    start.add_argument('decisions', type=Path)
     args = parser.parse_args(argv)
     try:
         if args.command == 'prepare':
@@ -188,12 +294,19 @@ def main(argv=None):
                 output.write('\n')
             print(f'已整理 {len(packet["sources"])} 份來源；交 Agent 1 分析，尚未形成用戶已確認的報告。')
             return 0
-        errors = validate_report(json.loads(args.report.read_text(encoding='utf-8')))
+        report = json.loads(args.report.read_text(encoding='utf-8'))
+        if args.command == 'validate-start':
+            errors = validate_start(report, json.loads(args.plan.read_text(encoding='utf-8')), json.loads(args.decisions.read_text(encoding='utf-8')))
+        else:
+            errors = validate_report(report)
         for error in errors:
             print(error)
         if errors:
             return 1
-        print('提案格式完整；仍待用戶審閱，未啟動使用者模擬。')
+        if args.command == 'validate-start':
+            print('開始前紀錄結構完整；仍須核查原始人類回覆與實際條件，本工具未啟動角色。')
+        else:
+            print('提案格式完整；仍待用戶審閱，未啟動使用者模擬。')
         return 0
     except (OSError, ValueError, UnicodeError) as error:
         print(f'無法完成：{error}')
