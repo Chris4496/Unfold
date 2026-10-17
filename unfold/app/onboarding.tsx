@@ -42,13 +42,14 @@ export default function OnboardingScreen() {
       footer={
         <View style={{ gap: 10 }}>
           <Button label={step === 2 ? 'Start' : 'Next'} onPress={next} disabled={step === 2 && !checked} />
-          <Button
-            tone="secondary"
-            label={store.demoLoading ? 'Opening fictional demo…' : 'Try Maya’s fictional demo'}
-            disabled={store.demoLoading}
-            onPress={() => { void store.enterDemo().then((entered) => { if (entered) router.replace('/diary'); }); }}
-          />
-          {store.demoError ? (
+          {step === 2 ? (
+            <Button
+              label={store.demoLoading ? 'Opening fictional demo…' : 'Try Maya’s fictional demo'}
+              disabled={store.demoLoading}
+              onPress={() => { void store.enterDemo().then((entered) => { if (entered) router.replace('/diary'); }); }}
+            />
+          ) : null}
+          {step === 2 && store.demoError ? (
             <T size={14} color={colors.teal} center>
               {store.demoError}
             </T>
