@@ -13,7 +13,7 @@ const STEPS = [
   },
   {
     title: 'It stays on your phone',
-    body: '',
+    body: 'Recordings and full transcripts are only saved locally. You can delete them from the diary whenever you want.',
   },
   {
     title: 'You choose what is shared',

@@ -6,7 +6,7 @@ import { colors } from '../src/theme';
 const STEPS = [
   {
     title: 'On this phone',
-    body: 'Recordings are sent through the Unfold server to ElevenLabs only to be transcribed; the server passes them on without keeping them. Recordings and full transcripts are saved here. You can delete a note from the diary.',
+    body: 'Recordings and full transcripts are only saved locally. You can delete a note from the diary.',
   },
   {
     title: 'De-identified here, before anything leaves',
